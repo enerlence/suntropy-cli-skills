@@ -1,8 +1,3 @@
----
-name: inventory-create-kit
-description: "Create solar kits, EV charger kits, and heat pump kits in Suntropy using the CLI. Includes component creation, assembly, and custom asset association."
----
-
 Guía detallada para crear kits solares, kits de cargadores VE y kits de aerotermia, incluyendo la asociación de componentes y equipos personalizados (custom assets).
 
 ## Conceptos clave

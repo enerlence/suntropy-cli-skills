@@ -4,20 +4,20 @@ Agent skills for [`@enerlence/suntropy-cli`](https://www.npmjs.com/package/@ener
 
 These skills give AI coding agents (Claude Code, OpenCode, Codex, etc.) knowledge of the CLI commands and workflows to automate solar energy operations.
 
-## Available Skills
+## Structure
 
-| Skill | Description |
-|-------|-------------|
-| **suntropy-cli** | Complete CLI command reference — all commands, options, and usage patterns |
-| **solar-study** | End-to-end solar study creation workflow with the study builder |
-| **inventory-create** | Create inventory items: panels, inverters, batteries, chargers, heat pumps, custom assets |
-| **inventory-create-kit** | Create and assemble solar kits, EV charger kits, and heat pump kits |
+```
+skills/
+└── suntropy-cli/
+    ├── SKILL.md                  # CLI reference + links to workflows
+    ├── solar-study.md            # End-to-end solar study creation
+    ├── inventory-create.md       # Create panels, inverters, batteries, etc.
+    └── inventory-create-kit.md   # Kit assembly with components
+```
 
 ## Installation
 
 ### Claude Code
-
-Copy the skills directory into your project or user skills folder:
 
 ```bash
 # Project-level (recommended)
@@ -27,47 +27,16 @@ cp -r skills/* .claude/skills/
 cp -r skills/* ~/.claude/skills/
 ```
 
-Or clone directly:
+### Other agents
 
 ```bash
-git clone https://github.com/enerlence/suntropy-cli-skills.git
-cp -r suntropy-cli-skills/skills/* .claude/skills/
-```
-
-### Other agents (.agents/, .opencode/, .github/, .codex/)
-
-Same structure — copy into the agent's skills directory:
-
-```bash
+# .agents/, .opencode/, .github/, .codex/
 cp -r skills/* .agents/skills/
 ```
 
 ## Prerequisites
 
-Install the CLI:
-
 ```bash
 npm install -g @enerlence/suntropy-cli
-```
-
-Authenticate:
-
-```bash
 suntropy auth set-key --key <your-jwt-api-key>
 ```
-
-## Structure
-
-```
-skills/
-├── suntropy-cli/
-│   └── SKILL.md          # CLI command reference
-├── solar-study/
-│   └── SKILL.md          # Solar study creation workflow
-├── inventory-create/
-│   └── SKILL.md          # Inventory item creation
-└── inventory-create-kit/
-    └── SKILL.md          # Kit creation and assembly
-```
-
-Each skill follows the standard `SKILL.md` format with `name` and `description` frontmatter.

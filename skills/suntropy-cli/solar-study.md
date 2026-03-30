@@ -1,8 +1,3 @@
----
-name: solar-study
-description: "Create or edit a complete solar study using the Suntropy CLI study builder. Guides through tariff, consumption, equipment, production, SolarResultCalculator results, and economics — with auto-validation and comments."
----
-
 Crea o edita un estudio solar completo usando el study builder de la CLI de Suntropy. El estudio se construye progresivamente en un fichero JSON local, y al final se guarda en el backend. El comando `calculate-results` replica el SolarResultCalculator del frontend para generar los resultados energeticos y economicos completos (spending/savings por periodo, excedentes, cobertura).
 
 ## Parametros de entrada

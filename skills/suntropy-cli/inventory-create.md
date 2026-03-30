@@ -1,8 +1,3 @@
----
-name: inventory-create
-description: "Create inventory items in Suntropy using the CLI: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers."
----
-
 Crea elementos en el inventario de Suntropy usando la CLI. El inventario incluye: paneles solares, inversores, baterías, cargadores VE, aerotermias, equipos personalizados (custom assets) y kits.
 
 ## Parámetros de entrada
