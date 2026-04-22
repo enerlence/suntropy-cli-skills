@@ -27,6 +27,7 @@ This skill includes detailed guides for the main workflows:
 - [[solar-study]] — Create or edit a complete solar study using the study builder. Covers tariff, consumption, equipment, production, SolarResultCalculator results, economics, comments, and saving to backend.
 - [[inventory-create]] — Create inventory items: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers.
 - [[inventory-create-kit]] — Create and assemble solar kits, EV charger kits, and heat pump kits with components and custom assets.
+- [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.
 
 ## Global Options
 
@@ -129,6 +130,43 @@ suntropy solarform simple --region <r> --sub-region <sr> --consumption <kWh> [--
 suntropy solarform calculate --data '<json>' [--save]
 suntropy solarform config
 ```
+
+### Configuration (`suntropy config`) — since 0.4.0
+
+Tenant configuration (theme, SolarForm, SolarForm Advanced). See [[config-tenant]] for the full guide and field-by-field effect documentation.
+
+```bash
+# Branding & theme (security service; POST requires admin role)
+suntropy config theme get --client-uid <uid>
+suntropy config theme set --primary "#0066ff" --logo-url <url> [--set k=v] [--from-file theme.json]
+suntropy config theme edit --client-uid <uid>
+
+# SolarForm basic (solar service)
+suntropy config solarform get [--with-parameters]
+suntropy config solarform create --url <slug> [flags | --set | --from-file]
+suntropy config solarform update <id> [flags | --set | --from-file]
+suntropy config solarform edit
+
+# SolarForm Advanced — whole payload
+suntropy config solarform advanced get
+suntropy config solarform advanced update [--set k=v] [--from-file advanced.json]
+suntropy config solarform advanced delete
+suntropy config solarform advanced init-default --client-uid <uid> [--email <e>] [--url <u>]
+
+# SolarForm Advanced — per-section (each: get | set | edit)
+suntropy config solarform advanced general      ...   # branding, language, tracking, base aesthetics
+suntropy config solarform advanced cover        ...   # hero / first screen
+suntropy config solarform advanced surfaces     ...   # map polygon step
+suntropy config solarform advanced consumer     ...   # residential/commercial/community
+suntropy config solarform advanced inclination  ...   # flat / inclined / very inclined roof
+suntropy config solarform advanced orientation  ...   # azimuth
+suntropy config solarform advanced panels       ...   # default panel + kit categories
+suntropy config solarform advanced consumption  ...   # kWh vs spending input mode
+suntropy config solarform advanced results      ...   # results screen + contact form + engine hooks
+suntropy config solarform advanced custom-fields ...  # extra lead fields (plugin-gated)
+```
+
+**Merge semantics:** each section's `set` and `edit` GET the current Advanced config, merge the section's subset, then PUT the whole document. You never need to send the full DTO to change a single field. Run `suntropy config solarform advanced <section> set --help` to see every field with a one-line description of what it actually changes in the widget.
 
 ## Common Tariff IDs (Spain)
 

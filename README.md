@@ -12,7 +12,8 @@ skills/
     ├── SKILL.md                  # CLI reference + links to workflows
     ├── solar-study.md            # End-to-end solar study creation
     ├── inventory-create.md       # Create panels, inverters, batteries, etc.
-    └── inventory-create-kit.md   # Kit assembly with components
+    ├── inventory-create-kit.md   # Kit assembly with components
+    └── config-tenant.md          # Tenant theme + SolarForm / Advanced configuration
 ```
 
 ## Installation
