@@ -8,12 +8,11 @@ These skills give AI coding agents (Claude Code, OpenCode, Codex, etc.) knowledg
 
 ```
 skills/
-└── suntropy-cli/
-    ├── SKILL.md                  # CLI reference + links to workflows
-    ├── solar-study.md            # End-to-end solar study creation
-    ├── inventory-create.md       # Create panels, inverters, batteries, etc.
-    ├── inventory-create-kit.md   # Kit assembly with components
-    └── config-tenant.md          # Tenant theme + SolarForm / Advanced configuration
+├── SKILL.md                  # CLI reference + links to workflows
+├── solar-study.md            # End-to-end solar study creation
+├── inventory-create.md       # Create panels, inverters, batteries, etc.
+├── inventory-create-kit.md   # Kit assembly with components
+└── config-tenant.md          # Tenant theme + SolarForm / Advanced configuration
 ```
 
 ## Installation
@@ -22,17 +21,17 @@ skills/
 
 ```bash
 # Project-level (recommended)
-cp -r skills/* .claude/skills/
+cp -r skills .claude/skills/suntropy-cli
 
 # User-level (available in all projects)
-cp -r skills/* ~/.claude/skills/
+cp -r skills ~/.claude/skills/suntropy-cli
 ```
 
 ### Other agents
 
 ```bash
 # .agents/, .opencode/, .github/, .codex/
-cp -r skills/* .agents/skills/
+cp -r skills .agents/skills/suntropy-cli
 ```
 
 ## Prerequisites
