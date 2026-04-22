@@ -7,10 +7,27 @@ description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar
 
 Agent-first CLI for the Suntropy solar platform. JSON output by default, optimized for programmatic manipulation by AI agents.
 
+These skills are distributed from [`enerlence/suntropy-cli-skills`](https://github.com/enerlence/suntropy-cli-skills) and give AI coding agents (Claude Code, OpenCode, Codex, etc.) knowledge of the CLI commands and workflows to automate solar energy operations.
+
 ## Installation
+
+Install the CLI itself:
 
 ```bash
 npm install -g @enerlence/suntropy-cli
+```
+
+Drop these skill files into the target agent's skills directory:
+
+```bash
+# Claude Code (project-level, recommended)
+cp -r skills .claude/skills/suntropy-cli
+
+# Claude Code (user-level, available in all projects)
+cp -r skills ~/.claude/skills/suntropy-cli
+
+# Other agents (.agents/, .opencode/, .github/, .codex/)
+cp -r skills .agents/skills/suntropy-cli
 ```
 
 ## Authentication
