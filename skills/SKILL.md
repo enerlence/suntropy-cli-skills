@@ -148,6 +148,43 @@ suntropy solarform calculate --data '<json>' [--save]
 suntropy solarform config
 ```
 
+### PPA (`suntropy ppa`) — since 0.5.0
+
+PPA (Power Purchase Agreement) analysis: read PPA templates and run PPA simulations on a study.
+
+```bash
+# Read-only PPA templates (client-scoped)
+suntropy ppa templates list [--fields _id,name,mode,ppaPrice,useInSolarForm]
+suntropy ppa templates get <ppaTemplateId>
+
+# Run PPA simulations on a study (read-only; does NOT persist)
+suntropy ppa calculate --study <studyId> [--template <ppaTemplateId>] [--raw] [--save-file <file>]
+suntropy ppa calculate --data <json|->            # full SolarStudy via flag/stdin
+```
+
+- `--study <id>` downloads the study (`/solar-study/findById/:id`); `--data <json>|-` passes a full SolarStudy.
+- `--template <ppaTemplateId>` runs against that single template; without it the backend uses the client templates flagged `useInSolarForm`.
+- Response is the study with `economicResults.ppaAnalysis` populated — `simulationResults[].profitabilityResults` holds `irr` and `paybackYears`. PowerCurves are summarized unless `--raw`.
+- Backed by `POST /solar-study/calculate-ppa-on-study` (solar service).
+
+### Shareables (`suntropy shareables`) — since 0.5.0
+
+Create shareable links for studies (sharing service, exposed under `/templates`). The backend fills `uid`, `url`, `clientUID` and `idShareable` from the token.
+
+```bash
+suntropy shareables create --element-id <studyId> \
+  [--element-type solarStudy|colectiveSolarStudy|veChargerStudy|heatpumpStudy|billing] \
+  [--shareable-type TEMPLATE|CONTRACT] [--privacy PUBLIC|PRIVATE] \
+  [--template-id <id>] [--name <n>] [--password <pwd>] \
+  [--expiration-date <date>] [--activation-date <date>] \
+  [--email-list "a@x.com;b@y.com"] [--reply-to <e>] \
+  [--custom-layout] [--read-only] [--link-params "k=v&k2=v2"] [--data '<json>'|-]
+```
+
+- Defaults: `--element-type solarStudy`, `--shareable-type TEMPLATE`, `--privacy PUBLIC`. `--password` forces `PRIVATE`.
+- `--link-params` appends query params to the generated link; `--data` merges extra `ShareableDto` fields last.
+- Response includes the public `url` and `uid`. Backed by `POST /shareable` (sharing service).
+
 ### Configuration (`suntropy config`) — since 0.4.0
 
 Tenant configuration (theme, SolarForm, SolarForm Advanced). See [[config-tenant]] for the full guide and field-by-field effect documentation.
