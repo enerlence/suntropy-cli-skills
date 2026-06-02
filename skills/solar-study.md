@@ -1,5 +1,28 @@
 Crea o edita un estudio solar completo usando el study builder de la CLI de Suntropy. El estudio se construye progresivamente en un fichero JSON local, y al final se guarda en el backend. El comando `calculate-results` replica el SolarResultCalculator del frontend para generar los resultados energeticos y economicos completos (spending/savings por periodo, excedentes, cobertura).
 
+## Widgets interactivos (MCP de Suntropy)
+
+> **Si tienes acceso al MCP remoto de Suntropy** (herramientas `open_surfaces_editor`, `open_curve_viewer`, `open_solar_layers_map`, `list_study_curves`) **y estas en una sesion interactiva con el usuario**, usalas como parte del proceso siguiendo las consignas de abajo. Si NO tienes acceso al MCP, ignora esta seccion y opera solo con la CLI.
+
+Herramientas disponibles:
+
+| Tool | Para que | Entrada | Efecto |
+|------|----------|---------|--------|
+| `open_curve_viewer` | Mostrar/visualizar UNA curva horaria del estudio (3 vistas conmutables: media diaria 24h, anual ~8760 pts, mensual 12 barras) | `_id` del estudio + ruta JSON de la curva | Solo lectura, render inline |
+| `open_surfaces_editor` | Que el usuario dibuje las superficies (poligonos) del tejado sobre el mapa | `studyId` (el devuelto por `studies init/pull/save`) | Escribe las superficies **directamente en el backend** |
+| `open_solar_layers_map` | Mostrar las capas de Google Solar (ortofoto RGB + irradiancia/flux anual) de la ubicacion del estudio | `_id` del estudio | Solo lectura |
+| `list_study_curves` | Listar que curvas tiene el estudio (si no sabes la ruta para el viewer) | `_id` del estudio | Solo lectura |
+
+Rutas de curva habituales para `open_curve_viewer`: `consumption`, `results.netConsumption`, `results.excessesCurve`, `production.total`, `surfaces.{i}.production`, `uploadedProductionCurve.productionFileCurve`. Si no conoces la ruta, llama antes a `list_study_curves`.
+
+**Consignas (cuando invocarlas dentro del flujo):**
+
+1. **Visualizar curvas.** Cada vez que crees o modifiques la **curva de consumo** (Paso 4), muestrasela al usuario con `open_curve_viewer` (ruta `consumption`). Haz lo mismo al calcular **produccion** (Pasos 5/7 -> `production.total` o `surfaces.{i}.production`) y al calcular **resultados** (Paso 8 -> `results.excessesCurve`, `results.netConsumption`).
+2. **Dibujar superficies.** Cuando hayas **completado el consumo**, en lugar de anadir superficies con la CLI, pide al usuario que las dibuje con `open_surfaces_editor` (pasale el `studyId`). El widget las escribe directamente en el backend: **NO** ejecutes `suntropy studies add surface` despues. Cuando el usuario confirme, recibiras un mensaje de seguimiento para continuar con la optimizacion de potencia pico y el calculo de resultados via CLI; antes de seguir, haz `suntropy studies pull <studyId> --file $STUDY_FILE` para traer las superficies al fichero local.
+3. **Analisis de radiacion.** Pregunta al usuario si quiere explorar el analisis de radiacion / potencial solar del tejado con `open_solar_layers_map` (pasale el `_id` del estudio).
+
+> Nota: los visualizadores (`open_curve_viewer`, `open_solar_layers_map`, `list_study_curves`) operan sobre el estudio **en backend** usando su `_id`; `open_surfaces_editor` usa el `studyId` de `init/pull/save`. Si haces cambios locales (consumo, produccion, resultados) que quieras visualizar, guardalos antes con `suntropy studies save` para que el backend los refleje.
+
 ## Parametros de entrada
 
 Pregunta al usuario los siguientes datos. Usa los valores por defecto si no los proporciona:
@@ -130,7 +153,13 @@ Anade comentario indicando el consumo configurado:
 suntropy studies add-comment --file $STUDY_FILE --content "Consumo configurado: <kWh> kWh/ano, patron <patron>"
 ```
 
+> **MCP (si disponible):** tras crear/modificar la curva de consumo, muestrasela al usuario con `open_curve_viewer` (ruta `consumption`). Una vez el consumo este **completo**, pasa al Paso 5 pidiendo al usuario que dibuje las superficies con `open_surfaces_editor` en lugar de anadirlas por CLI.
+
 ### Paso 5: Anadir superficie y calcular produccion base
+
+> **MCP (si disponible):** este es el momento de pedir al usuario que **dibuje las superficies** sobre el mapa con `open_surfaces_editor` (pasale el `studyId`). El widget las escribe directamente en el backend, asi que **NO** uses el bloque `suntropy studies add surface` de abajo; cuando el usuario confirme, haz `suntropy studies pull <studyId> --file $STUDY_FILE` y continua con `calculate production`. Ademas, **pregunta al usuario si quiere ver el analisis de radiacion** del tejado con `open_solar_layers_map` (pasale el `_id`) antes o despues de dibujar.
+>
+> Si NO tienes MCP, usa los comandos CLI de abajo.
 
 Primero hay que anadir las superficies y calcular la produccion base (necesaria para la optimizacion):
 
@@ -218,6 +247,8 @@ suntropy studies add surface --file $STUDY_FILE --lat <lat> --lon <lon> --angle 
 suntropy studies calculate production --file $STUDY_FILE --all-surfaces
 ```
 
+> **MCP (si disponible):** tras recalcular la produccion, muestrasela al usuario con `open_curve_viewer` (ruta `production.total`, o `surfaces.{i}.production` para una superficie concreta). Recuerda guardar antes (`suntropy studies save`) si quieres que el backend refleje la produccion recien calculada.
+
 ### Paso 8: Calcular resultados (SolarResultCalculator)
 
 Este es el paso clave. El comando `calculate-results` replica exactamente la logica del SolarResultCalculator del frontend:
@@ -249,6 +280,8 @@ Anade comentario tras calcular resultados:
 ```bash
 suntropy studies add-comment --file $STUDY_FILE --content "Resultados calculados: produccion <X> kWh, ahorro <X> euros/ano, cobertura <X>%"
 ```
+
+> **MCP (si disponible):** tras calcular resultados, muestra al usuario las curvas clave con `open_curve_viewer`: excedentes (`results.excessesCurve`) y consumo neto (`results.netConsumption`). Guarda antes (`suntropy studies save`) para que el backend tenga los resultados.
 
 ### Paso 9: Configurar parametros economicos
 
@@ -359,3 +392,4 @@ RESULTADO
 - Si algun paso falla, muestra el error y pregunta al usuario como proceder.
 - Usa `suntropy studies validate` en cualquier momento para ver el estado de completado.
 - Los cambios en consumo o superficies disparan cascade resets automaticos (se invalidan produccion, resultados y balance economico).
+- Si tienes acceso al **MCP de Suntropy** (ver seccion "Widgets interactivos" al principio), usa `open_curve_viewer` para mostrar curvas (consumo, produccion, excedentes), `open_surfaces_editor` para que el usuario dibuje las superficies (en lugar de `add surface`) y `open_solar_layers_map` para el analisis de radiacion. Estos widgets enriquecen la sesion interactiva; sin MCP, el flujo CLI funciona igual.
