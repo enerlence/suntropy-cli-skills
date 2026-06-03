@@ -76,6 +76,8 @@ suntropy studies calculate-production --lat <n> --lon <n> --power <w> [--angle 3
 suntropy studies optimize-surfaces --lat <n> --lon <n>
 ```
 
+> **Geocoding:** if you only have a postal address, resolve it to `lat`/`lng` first with `suntropy geocode resolve` (see the Geocode section) and set the study `mapCenter` — [[solar-study]] covers this as its first data step.
+
 **Study Builder** — see [[solar-study]] for the full workflow:
 
 ```bash
@@ -184,6 +186,23 @@ suntropy shareables create --element-id <studyId> \
 - Defaults: `--element-type solarStudy`, `--shareable-type TEMPLATE`, `--privacy PUBLIC`. `--password` forces `PRIVATE`.
 - `--link-params` appends query params to the generated link; `--data` merges extra `ShareableDto` fields last.
 - Response includes the public `url` and `uid`. Backed by `POST /shareable` (sharing service).
+
+### Geocode (`suntropy geocode`) — since 0.6.0
+
+Resolve an address into coordinates and vice versa. Proxies the Google Geocoding API server-side through the solar public API — no API key on the client, and every call is logged as a `PublicApiCall`.
+
+```bash
+# Address -> coordinates (best match by default; --all returns every candidate)
+suntropy geocode resolve --address "Calle Mayor 1, Madrid" [--country es] [--all]
+
+# Coordinates -> address (reverse geocoding)
+suntropy geocode reverse --lat 40.4168 --lng -3.7038 [--all]
+```
+
+- `resolve` returns the best match `{ formattedAddress, lat, lng, locationType, placeId, types, addressComponents }`. With `--all` it returns the full candidate array; with no match it returns `{ found: false }`.
+- `--country <iso>` biases results to a country (e.g. `es`, `pt`, `it`); quote addresses that contain spaces/commas.
+- Typical use: geocode the client address to obtain `lat`/`lng`, then set the study `mapCenter` before building surfaces — see [[solar-study]].
+- Backed by `GET /api/geocode` and `GET /api/reverse-geocode` (solar service). Requires the Geocoding API enabled in GCP on the server key.
 
 ### Configuration (`suntropy config`) — since 0.4.0
 

@@ -30,7 +30,8 @@ Pregunta al usuario los siguientes datos. Usa los valores por defecto si no los 
 | Parametro | Obligatorio | Default |
 |-----------|-------------|---------|
 | Nombre del estudio | No | "Estudio Solar YYYY-MM-DD" |
-| Ubicacion (lat, lon) | Si | - |
+| Direccion (texto) | No | - (se geocodifica a lat/lon con `geocode resolve`) |
+| Ubicacion (lat, lon) | Si (o derivada de la direccion) | - |
 | Consumo anual (kWh) | Si | - |
 | Patron consumo | No | Domestic |
 | Modo consumo | No | annual+pattern (alternatives: by-period, monthly, monthly-by-period, from-file) |
@@ -70,6 +71,26 @@ Anade comentario indicando el inicio:
 ```bash
 suntropy studies add-comment --file $STUDY_FILE --content "Inicio de estudio solar via CLI agent"
 ```
+
+### Paso 0.5: Geocodificar la direccion -> coordenadas y `mapCenter`
+
+Si el usuario aporta una **direccion** (en vez de lat/lon directas), conviertela a coordenadas con `geocode resolve` y fija el centro del mapa del estudio. Hazlo al principio: estas coordenadas se reutilizan para las superficies (Paso 5), para el analisis de radiacion y, si tienes MCP, para centrar `open_surfaces_editor` / `open_solar_layers_map`.
+
+```bash
+# Resolver direccion -> coordenadas (mejor match). Usa --country para sesgar por pais.
+COORDS=$(suntropy geocode resolve --address "<direccion completa>" --country es)
+LAT=$(echo "$COORDS" | python3 -c "import sys,json;print(json.load(sys.stdin)['lat'])")
+LNG=$(echo "$COORDS" | python3 -c "import sys,json;print(json.load(sys.stdin)['lng'])")
+
+# Fijar mapCenter (y location) en el estudio via merge generico
+suntropy studies set data --file $STUDY_FILE \
+  --data "{\"mapCenter\":{\"lat\":$LAT,\"lng\":$LNG},\"location\":{\"lat\":$LAT,\"lng\":$LNG}}"
+```
+
+Notas:
+- `geocode resolve` devuelve el mejor match (`lat`, `lng`, `formattedAddress`). Si la direccion es ambigua, usa `--all` para revisar los candidatos y elegir; si no hay match devuelve `{ "found": false }` (pide una direccion mas precisa o lat/lon).
+- Si el usuario ya da lat/lon directamente, **omite este paso**: el `add surface` del Paso 5 tambien fija `mapCenter`/`location` con las coordenadas de la superficie (la ultima superficie anadida prevalece).
+- Operacion inversa disponible: `suntropy geocode reverse --lat <n> --lng <n>`.
 
 ### Paso 1: Configurar tarifa y zona geografica
 
