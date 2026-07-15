@@ -42,7 +42,6 @@ suntropy auth status
 This skill includes detailed guides for the main workflows:
 
 - [[solar-study]] — Create or edit a complete solar study using the study builder. Covers tariff, consumption, equipment, production, SolarResultCalculator results, economics, comments, and saving to backend.
-- [[alexandria-solar-study]] — Variante de [[solar-study]] para cuando operas como **Alexandria dentro del front de Suntropy** (copiloto embebido): combina la CLI con los tools del copiloto (`get_current_study`, `save_study`, `sync_study`, `go_to_study_step`) para co-realizar el estudio con el usuario, guardando a medida que se avanza y **delegando en el usuario el dibujo de la cubierta** (superficies). Úsala solo si tienes esos tools; si no, usa [[solar-study]].
 - [[inventory-create]] — Create inventory items: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers.
 - [[inventory-create-kit]] — Create and assemble solar kits, EV charger kits, and heat pump kits with components and custom assets.
 - [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.
