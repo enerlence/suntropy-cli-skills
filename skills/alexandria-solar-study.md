@@ -19,6 +19,9 @@ Si **no** tienes esos tools (sesión CLI pura, o con el MCP de widgets de Suntro
 | `save_study` | Guardar el estudio del editor (necesario cuando es nuevo y no tiene `studyId`) | Abre el diálogo de guardado; devuelve `{ saved, studyId }`. Con `studyId` ya puedes `pull`/`save` por CLI y `sync_study`. |
 | `sync_study` | Volcar al editor los cambios que escribiste en backend | Trae el estudio completo con la misma API del front, rehidrata y actualiza el editor **sin recargar**. Param opcional `studyId` (por defecto el abierto). Pide confirmación si el usuario tiene cambios sin guardar. |
 | `go_to_study_step` | Llevar al usuario a un paso concreto del editor | `step` ∈ `clientDetails, consumption, surfacesSelector, production, results, economicBalance`. Devuelve `{ ok, step, path }`. |
+| `open_study_in_editor` | Cargar un estudio (por `studyId`) en el editor del front **desde cualquier ruta** (aunque el editor no esté abierto) | Si el editor está montado, actualiza in-place; si no, navega a `/new-study` con el estudio cargado. Devuelve `{ success, studyId, mode }`. |
+
+> También puedes usar el tool genérico **`front_refresh_info`** cuando estés en `/new-study`: re-trae el estudio del backend y refresca el editor (equivale a `sync_study` sin confirmación; se omite si el usuario tiene cambios sin guardar). Y **`front_get_path_context`** incluye el estado ligero + progreso del estudio abierto.
 
 Los 6 pasos son **idénticos** a los de la CLI (mismo orden y criterio de completado): `clientDetails → consumption → surfacesSelector → production → results → economicBalance`.
 
@@ -41,6 +44,8 @@ Necesitas un `studyId` para poder operar por CLI y sincronizar. **Preserva lo qu
 - Si `isNew` es true:
   - Si el borrador tiene datos aprovechables (algún paso en `stepsProgress` no vacío): llama a `save_study` para guardarlo → obtienes `studyId` (esto **ingiere el borrador**, conservando el trabajo del usuario). Si el usuario cancela (`saved:false`), explícale que sin guardar no puedes sincronizar y pregunta cómo seguir.
   - Si el borrador está esencialmente vacío: puedes construir desde cero por CLI (`suntropy studies init …`) y, tras el primer `save`, usar `sync_study` con el nuevo `studyId` para cargarlo en el editor (modo *load-new*: pedirá confirmación porque reemplaza el borrador vacío).
+
+Si el usuario **no** tiene el editor abierto (`get_current_study` no disponible o `isStudyOpen` falso) y ya tienes un `studyId` (existente, o recién creado por CLI con `suntropy studies init … && suntropy studies save`), usa **`open_study_in_editor(studyId)`** para cargarlo en el front y empezar a co-editar desde cualquier pantalla.
 
 Trae el estudio a tu fichero de trabajo local:
 
@@ -135,4 +140,4 @@ suntropy studies validate --file $STUDY_FILE   # debe dar completionPercentage: 
 
 - El fichero JSON local (`$STUDY_FILE`) es **el mismo formato** que usa el frontend; `pull`/`save` son tu canal contra el backend, `sync_study` es tu canal hacia el editor del usuario.
 - Cambios en consumo o superficies disparan cascade resets (se invalidan producción, resultados y balance): tras tocarlos, recalcula producción → resultados → económico antes de dar por cerrado.
-- Esta skill cubre el caso "usuario ya en el editor". Para cargar en el front un estudio cuando el editor **no** está montado (p. ej. arrancar desde otra pantalla), hoy se guía al usuario a `/new-study`; una tool `open_study_in_editor` para hacerlo desde cualquier ruta es una mejora futura.
+- Para cargar un estudio en el front cuando el editor **no** está montado (arrancar desde otra pantalla), usa `open_study_in_editor(studyId)`.
