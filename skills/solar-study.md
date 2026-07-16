@@ -304,6 +304,56 @@ suntropy studies add-comment --file $STUDY_FILE --content "Resultados calculados
 
 > **MCP (si disponible):** tras calcular resultados, muestra al usuario las curvas clave con `open_curve_viewer`: excedentes (`results.excessesCurve`) y consumo neto (`results.netConsumption`). Guarda antes (`suntropy studies save`) para que el backend tenga los resultados.
 
+### Paso 8.5: Diagnostico de KPIs clave (obligatorio tras calcular resultados)
+
+Una vez tengas la propiedad `results`, **antes de presentar el resumen al usuario**, evalua
+los 4 KPIs de negocio que mas confunden al cliente. Usa exactamente estos umbrales (son los
+mismos que disparan los avisos proactivos en la UI de Suntropy, para no contradecirla):
+
+| KPI | Formula | Se considera anomalo si |
+|-----|---------|-------------------------|
+| Ahorro anual | `totalSavings / totalRawSpending` | ratio < 0.30 (ahorro < 30% del gasto actual) |
+| Excedentes | `totalExcesses / totalProduction` | ratio > 0.60 (mas del 60% de lo producido se vierte) |
+| Ahorro extra por baterias | `(ahorroConBaterias - ahorroBase) / ahorroBase` | ratio < 0.10 (baterias aportan < 10%) |
+| Amortizacion (payback) | `costeTotalInstalacion / totalSavings` (años) | > 8 años |
+
+> El KPI de baterias solo aplica si el estudio contempla baterias; si no, omitelo.
+
+Para cada KPI, en tu resumen indica **su valor y su causa principal probable**. Causas tipicas:
+
+- **Ahorro anual bajo:** consumo concentrado fuera de horas solares (nocturno), potencia pico
+  infradimensionada frente al consumo, precios de energia bajos, o excedentes altos sin
+  compensar/gestionar.
+- **Excedentes altos:** potencia pico sobredimensionada frente al consumo, consumo diurno
+  escaso, ausencia de bateria o de gestion de excedentes (venta a red / PPA / bateria virtual).
+- **Ahorro extra por baterias bajo:** hay pocos excedentes que almacenar, el consumo diurno ya
+  esta cubierto por la produccion, o la capacidad de bateria esta mal dimensionada.
+- **Amortizacion larga:** coste de instalacion o margen elevados, ahorro anual bajo, o tarifa
+  poco favorable.
+
+**Si NINGUN KPI es anomalo:** dilo explicitamente ("los indicadores clave estan en rango
+saludable") y continua con la presentacion normal.
+
+**Si algun KPI es anomalo:** ademas de explicar la causa, **propon 1-2 cambios concretos y
+accionables sobre el estudio en curso**, mapeados a comandos reales de la CLI. Ejemplos:
+
+| Sintoma | Palanca propuesta | Comando (borrador — NO ejecutar sin OK) |
+|---------|-------------------|------------------------------------------|
+| Excedentes altos / sobredimensionado | Reoptimizar potencia pico limitando excedentes | `suntropy studies optimize-peakpower --file $STUDY_FILE --max-excesses 30 --apply` |
+| Excedentes altos con bateria disponible | Reoptimizar por ahorro energetico (aprovecha almacenamiento) | `suntropy studies optimize-peakpower --file $STUDY_FILE --energy-savings 80 --apply` |
+| Excedentes altos sin gestion | Activar compensacion de excedentes | `suntropy studies set economics --file $STUDY_FILE --excesses-mode gridSelling --excesses-selling-price 0.06` |
+| Ahorro anual bajo por infradimensionado | Subir cobertura de consumo | `suntropy studies optimize-peakpower --file $STUDY_FILE --raw-consumption 100 --apply` |
+| Amortizacion larga por coste/margen | Revisar margen o coste total con el usuario | `suntropy studies set economics --file $STUDY_FILE --margin <nuevo> --total-cost <nuevo>` |
+
+> ⚠️ **Consulta SIEMPRE antes de actuar.** Presenta el diagnostico y las propuestas como
+> **recomendaciones**, nunca las apliques por tu cuenta. Espera confirmacion explicita del
+> usuario sobre QUE cambio quiere. Solo entonces ejecuta el comando correspondiente y, si el
+> cambio toca potencia/superficies/consumo, **recalcula** produccion y resultados
+> (`calculate production --all-surfaces` + `calculate-results`) y vuelve a evaluar los KPIs
+> para mostrar el antes/despues. Recuerda que aplicar cambios sobre un estudio ya guardado
+> requiere `save` (y, si hay cambios sin guardar en el editor del front, usar el flujo de
+> sobrescritura con confirmacion — nunca pisar datos sin avisar).
+
 ### Paso 9: Configurar parametros economicos
 
 ```bash
@@ -374,6 +424,10 @@ suntropy studies comment <studyId> --content "Revision completada por agente"
 ```
 
 ## Presentacion de resultados
+
+> Antes de este resumen ejecuta el **Paso 8.5 (Diagnostico de KPIs clave)** e incluye en la
+> presentacion el estado de cada KPI y, si procede, las mejoras propuestas (pendientes de
+> confirmacion del usuario).
 
 Tras el paso 8 (calculate-results), presenta al usuario un resumen con los datos del `results`:
 
