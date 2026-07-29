@@ -397,6 +397,8 @@ suntropy studies save --file $STUDY_FILE --state-id 1
 
 ## Edicion de estudios existentes
 
+> ⚠️ **Que es `<studyId>`:** es el `_id` del estudio en Mongo = un **ObjectId de 24 caracteres hex** (ej. `665f1a2b3c4d5e6f7a8b9c0d`). Es el campo `solarStudyId` que devuelve `suntropy studies list` (y el `_id` que devuelven `studies init/pull/save`). **NO** es un UUID con guiones (ej. `80ebf367-ce0e-4b09-962d-d63841c6c244`): esos son el uid del chat de Alexandria o de un shareable, y usarlos da un error de id invalido. Si solo tienes el nombre/cliente del estudio, localiza su `solarStudyId` con `suntropy studies list --client-name "<nombre>"` antes de `pull/get/comment`.
+
 Para editar un estudio que ya existe en el backend:
 
 ```bash
