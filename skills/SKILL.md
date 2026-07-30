@@ -204,6 +204,27 @@ suntropy geocode reverse --lat 40.4168 --lng -3.7038 [--all]
 - Typical use: geocode the client address to obtain `lat`/`lng`, then set the study `mapCenter` before building surfaces — see [[solar-study]].
 - Backed by `GET /api/geocode` and `GET /api/reverse-geocode` (solar service). Requires the Geocoding API enabled in GCP on the server key.
 
+### Notifications (`suntropy notifications`) — since 0.11.6
+
+Send an in-app (and email) notification to a user. Use it to proactively tell a user that a task is finished: a **direct execution** (Alexandria task modal) or an **email**-triggered run leaves no study comment, so — unlike a comment-tag mention — no notification is generated automatically and the user won't know the work is done unless they go looking.
+
+```bash
+# Notify a user as Alexandria that a task is done (signs it as Alexandria)
+suntropy notifications send --to-user <userUID> --as-alexandria \
+  --message "He terminado el estudio de la Nave Industrial. Revisa los resultados."
+
+# Link it to the study so the notification is click-through, and ping as a mention
+suntropy notifications send --to-user <userUID> --as-alexandria --mention \
+  --title "Estudio listo" --message "Resultados calculados." --study <solarStudyId>
+```
+
+- `--to-user <userUID>` (required): recipient. `--message <text>` (required, Markdown): body.
+- `--as-alexandria`: signs the notification as Alexandria (name + avatar in the app) instead of the acting user — **always pass it when notifying on Alexandria's behalf**, otherwise it looks like the user notified themselves.
+- `--mention`: send as `new_mention` (a ping, gated by the user's mention setting) instead of `new_comment` (an update).
+- `--study <solarStudyId>`: makes the notification click through to that study (must be the 24-hex `solarStudyId`, not a UUID — see [[solar-study]]).
+- `--severity info|warning|urgent` (default `info`); `--title <text>`; `--link <url>` (email CTA); `--from-user <userUID>` (overrides the sender).
+- Backed by `POST /notifications` (notifications service). The recipient's client must have notifications enabled and the type not disabled in its config.
+
 ### Configuration (`suntropy config`) — since 0.4.0
 
 Tenant configuration (theme, SolarForm, SolarForm Advanced). See [[config-tenant]] for the full guide and field-by-field effect documentation.
