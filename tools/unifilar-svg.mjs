@@ -21,7 +21,10 @@ const TITLE_BLOCK = { w: 95, h: 50 };
 const STROKE = 0.25, BOLD = 0.5, STUB = 1.5;
 const FONT = "DejaVu Sans, Helvetica, Arial, sans-serif";
 const F = { title: 4.2, sub: 2.6, label: 2.4, small: 2.1, tiny: 1.8 };
-const STRING_PITCH = 13;
+const STRING_PITCH_BASE = 13;
+// String labels may wrap to two lines (long module names): give those rows a taller pitch.
+const stringLabel = (s, spec) => [s.id, s.n ? `${s.n} × ${s.modulo || spec.modulo?.modelo || "módulo"}` : null, s.mppt ? `MPPT ${s.mppt}` : null].filter(Boolean).join(" · ");
+const stringPitchFor = (strings, spec) => (strings.some((s) => wrap(stringLabel(s, spec), 34).length > 1) ? 16.5 : STRING_PITCH_BASE);
 
 // ---------------------------------------------------------------- primitives (content layer)
 const out = [];
@@ -148,7 +151,7 @@ const fmtTramo = (t) => {
   const l1 = [t.id, t.cable].filter(Boolean).join(" · ");
   const l2 = [sec, t.longitud != null ? `${t.longitud} m` : ""].filter(Boolean).join(" · ");
   // long free-text notes wrap on their own lines so they never run into the next symbol
-  return [...wrap(l1, 28), ...wrap(l2, 28), ...wrap(t.nota, 28)].filter(Boolean);
+  return [...wrap(l1, 24), ...wrap(l2, 24), ...wrap(t.nota, 24)].filter(Boolean);
 };
 const used = new Set(); // symbol kinds that appear → legend
 const use = (k) => { used.add(k); return k; };
@@ -166,7 +169,7 @@ const X = { s: 8 };
 X.cajaL = X.s + 36; X.cajaW = 48; X.cajaR = X.cajaL + X.cajaW;
 X.invL = hasCaja ? X.cajaR + 22 : X.s + 36;
 X.invC = X.invL + 11; X.invR = X.invL + 22 + STUB;
-X.brk = X.invR + 36; X.dif = X.brk + 30; X.bus = X.dif + 16;
+X.brk = X.invR + 42; X.dif = X.brk + 30; X.bus = X.dif + 16;
 X.cuadroL = X.brk - 11; X.cuadroR = X.bus + 8;
 
 const rows = [];
@@ -174,29 +177,29 @@ let y = contentTop;
 inversores.forEach((inv) => {
   const strings = inv.strings && inv.strings.length ? inv.strings : [{ id: "S1", n: 0 }];
   const nS = strings.length;
+  const pitch = stringPitchFor(strings, spec);
   const rowTop = y;
   const firstY = rowTop + 8;
-  const yC = firstY + ((nS - 1) * STRING_PITCH) / 2;
-  const lastY = firstY + (nS - 1) * STRING_PITCH;
+  const yC = firstY + ((nS - 1) * pitch) / 2;
+  const lastY = firstY + (nS - 1) * pitch;
   const invH = Math.max(16, 8 + Math.max(1, inv.mppts || 1) * 4.4);
   const dcLines = fmtTramo(inv.tramo_cc).length, invLines = 2 + wrap(inv.integra, 28).length + Math.max(0, wrap(inv.id ? `${inv.id} · ${inv.modelo || "inversor"}` : inv.modelo, 30).length - 1);
   let bottom = Math.max(lastY + 14 + dcLines * 2.8, yC + invH / 2 + 4 + invLines * 2.8 + 4);
   if (inv.bateria) bottom = Math.max(bottom, yC + invH / 2 + 24);
   if (inv.caja_cc) bottom = Math.max(bottom, lastY + 34);
-  rows.push({ inv, strings, rowTop, firstY, yC, lastY, bottom });
+  rows.push({ inv, strings, pitch, rowTop, firstY, yC, lastY, bottom });
   y = bottom + 4;
 });
 const yHead = rows[0].yC; // head chain sits on the first row's centre line
 const yBusBottom = rows[rows.length - 1].yC;
 
 // ---------------------------------------------------------------- rows
-rows.forEach(({ inv, strings, rowTop, firstY, yC, lastY }, i) => {
+rows.forEach(({ inv, strings, pitch, rowTop, firstY, yC, lastY }, i) => {
   const mppts = Math.max(1, inv.mppts || 1);
   const stringPorts = strings.map((s, k) => {
-    const sy = firstY + k * STRING_PITCH;
+    const sy = firstY + k * pitch;
     const p = G.panelString(X.s, sy); use("panelString");
-    const lab = [s.id, s.n ? `${s.n} × ${s.modulo || spec.modulo?.modelo || "módulo"}` : null, s.mppt ? `MPPT ${s.mppt}` : null].filter(Boolean).join(" · ");
-    textLines(X.s - 8, sy + 8.2, wrap(lab, 34).slice(0, 2), F.small); // two lines max: the next string sits 13 mm below
+    textLines(X.s - 8, sy + 8.2, wrap(stringLabel(s, spec), 34).slice(0, 2), F.small); // two lines max; the pitch already makes room for them
     return { y: sy, x: p.out[0], mppt: Math.min(s.mppt || Math.min(k + 1, mppts), mppts) };
   });
   // DC line description under the last string label
