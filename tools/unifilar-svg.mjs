@@ -146,8 +146,9 @@ const fmtTramo = (t) => {
   const pe = t.conductores === undefined || String(t.conductores).includes("PE");
   const sec = t.seccion != null ? `${n}X${t.seccion}${pe ? `+${t.pe ?? t.seccion}` : ""} mm²` : "";
   const l1 = [t.id, t.cable].filter(Boolean).join(" · ");
-  const l2 = [sec, t.longitud != null ? `${t.longitud} m` : "", t.nota].filter(Boolean).join(" · ");
-  return [l1, l2].filter(Boolean);
+  const l2 = [sec, t.longitud != null ? `${t.longitud} m` : ""].filter(Boolean).join(" · ");
+  // long free-text notes wrap on their own lines so they never run into the next symbol
+  return [...wrap(l1, 28), ...wrap(l2, 28), ...wrap(t.nota, 28)].filter(Boolean);
 };
 const used = new Set(); // symbol kinds that appear → legend
 const use = (k) => { used.add(k); return k; };
@@ -178,7 +179,8 @@ inversores.forEach((inv) => {
   const yC = firstY + ((nS - 1) * STRING_PITCH) / 2;
   const lastY = firstY + (nS - 1) * STRING_PITCH;
   const invH = Math.max(16, 8 + Math.max(1, inv.mppts || 1) * 4.4);
-  let bottom = Math.max(lastY + 14, yC + invH / 2 + 12);
+  const dcLines = fmtTramo(inv.tramo_cc).length, invLines = 2 + wrap(inv.integra, 28).length + Math.max(0, wrap(inv.id ? `${inv.id} · ${inv.modelo || "inversor"}` : inv.modelo, 30).length - 1);
+  let bottom = Math.max(lastY + 14 + dcLines * 2.8, yC + invH / 2 + 4 + invLines * 2.8 + 4);
   if (inv.bateria) bottom = Math.max(bottom, yC + invH / 2 + 24);
   if (inv.caja_cc) bottom = Math.max(bottom, lastY + 34);
   rows.push({ inv, strings, rowTop, firstY, yC, lastY, bottom });
@@ -194,17 +196,17 @@ rows.forEach(({ inv, strings, rowTop, firstY, yC, lastY }, i) => {
     const sy = firstY + k * STRING_PITCH;
     const p = G.panelString(X.s, sy); use("panelString");
     const lab = [s.id, s.n ? `${s.n} × ${s.modulo || spec.modulo?.modelo || "módulo"}` : null, s.mppt ? `MPPT ${s.mppt}` : null].filter(Boolean).join(" · ");
-    text(X.s - 8, sy + 8.2, lab, F.small);
+    textLines(X.s - 8, sy + 8.2, wrap(lab, 34).slice(0, 2), F.small); // two lines max: the next string sits 13 mm below
     return { y: sy, x: p.out[0], mppt: Math.min(s.mppt || Math.min(k + 1, mppts), mppts) };
   });
   // DC line description under the last string label
-  textLines(X.s - 8, lastY + 8.2 + 3, fmtTramo(inv.tramo_cc), F.small);
+  textLines(X.s - 8, lastY + 8.2 + 5.6, fmtTramo(inv.tramo_cc), F.small);
 
   const invP = G.inverter(X.invC, yC, mppts); use("inverter");
   textLines(X.invL - 1, yC + invP.h / 2 + 3.6, [
     ...wrap(inv.id ? `${inv.id} · ${inv.modelo || "inversor"}` : inv.modelo, 30),
     [inv.p_kw ? `${inv.p_kw} kW` : null, inv.fases ? `${inv.fases}F` : null, inv.mppts ? `${inv.mppts} MPPT` : null].filter(Boolean).join(" · "),
-    ...wrap(inv.integra, 30),
+    ...wrap(inv.integra, 28),
   ], F.small);
 
   // strings grouped by MPPT input
@@ -346,13 +348,13 @@ chain.forEach((item) => {
     x = Math.max(prevX, cgmpR) + 12;
     line(prevX, yHead, x - 4 - STUB, yHead);
     G.meter(x, yHead, "kWh"); use("meter");
-    textLines(x - 10, yHead + 7.6, [...wrap(cab.contador || "Contador bidireccional", 24), ...wrap(cab.contador_nota, 24)], F.small);
+    textLines(x - 10, yHead + 7.6, [...wrap(cab.contador || "Contador bidireccional", 22), ...wrap(cab.contador_nota, 22)].slice(0, 4), F.small);
     prevX = x + 4 + STUB;
   } else if (item.kind === "red") {
     x = prevX + 26;
     line(prevX, yHead, x - 7, yHead);
     G.grid(x, yHead); use("grid");
-    textLines(x - 6, yHead + 7.2, [...wrap(cab.red || `Red BT ${red.tension || ""} V`, 22), red.icc_ka ? `Icc cabecera ${red.icc_ka} kA` : null], F.small);
+    textLines(x - 6, yHead + 7.2, [...wrap(cab.red || `Red BT ${red.tension || ""} V`, 20), red.icc_ka ? `Icc cabecera ${red.icc_ka} kA` : null].slice(0, 4), F.small);
     x += 6;
   }
 });
