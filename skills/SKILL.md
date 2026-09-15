@@ -45,6 +45,11 @@ This skill includes detailed guides for the main workflows:
 - [[inventory-create]] — Create inventory items: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers.
 - [[inventory-create-kit]] — Create and assemble solar kits, EV charger kits, and heat pump kits with components and custom assets.
 - [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.
+- [[satvolt-campaign]] — Create, configure, follow and export Satvolt lead-generation campaigns (Google Maps + enrichment pipeline).
+- [[satvolt-probe-to-full-campaign]] — Launch a probe campaign from a template, validate its data, fix the pipeline without relaunching and extend it to the whole area.
+- [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
+- [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
+- [[satvolt-api]] — Reference of the Satvolt public HTTP API (`/satvolt/api/v1`) used by those commands.
 
 ## Global Options
 
@@ -224,6 +229,23 @@ suntropy notifications send --to-user <userUID> --as-alexandria --mention \
 - `--study <solarStudyId>`: makes the notification click through to that study (must be the 24-hex `solarStudyId`, not a UUID — see [[solar-study]]).
 - `--severity info|warning|urgent` (default `info`); `--title <text>`; `--link <url>` (email CTA); `--from-user <userUID>` (overrides the sender).
 - Backed by `POST /notifications` (notifications service). The recipient's client must have notifications enabled and the type not disabled in its config.
+
+### Satvolt (`suntropy satvolt`)
+
+Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (1 credit = 0.005 €): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
+
+```bash
+suntropy satvolt templates create --name "Industria" --from-campaign 62
+suntropy satvolt campaigns create --name "Sonda" --template "Industria" --circle 37.35,-6.27 --radius 5000 --max-leads 50
+suntropy satvolt campaigns start <id> && suntropy satvolt campaigns funnel <id> --format human
+suntropy satvolt leads list <id> --step QUALIFY --step-status failure
+suntropy satvolt leads run-step <id> <leadId> ESTIMATE_CONSUMPTION
+suntropy satvolt campaigns extend <id> --max-leads 500        # more leads without relaunching
+suntropy satvolt campaigns usage <id> --format human            # credits consumed
+suntropy satvolt export-tables export <tableId> --file-format xlsx --out leads.xlsx
+```
+
+See [[satvolt-cli]] for every command, [[satvolt-api]] for the HTTP API and [[satvolt-campaign]] / [[satvolt-probe-to-full-campaign]] / [[satvolt-lead-troubleshooting]] for workflows.
 
 ### Configuration (`suntropy config`) — since 0.4.0
 
