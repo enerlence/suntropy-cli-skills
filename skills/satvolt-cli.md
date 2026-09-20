@@ -27,7 +27,7 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
 
 - **Argumentos JSON** (`--steps`, `--config`, `--data`, `--columns`, `--polygon`): aceptan JSON en línea, `@fichero.json` o `-` para leer de stdin.
 - **Errores:** salen por stderr como `{"error":true,"message","status","code","details"}` y el comando termina con código ≠ 0. Decide qué hacer según el `code`, no según el texto.
-- **Permisos:** la CLI puede estar limitada a un nivel (`SUNTROPY_COMMAND_PROFILE`). En `read` no aparecen los comandos que cambian datos. `write` añade `create`, `update`, `patch`, `set`, `add`, `remove`, `start`, `resume`, `run`, `run-step`, `extend` y `duplicate`. `delete` añade `delete` y `reset`.
+- **Permisos:** la CLI puede estar limitada a un nivel (`SUNTROPY_COMMAND_PROFILE`). En `read` no aparecen los comandos que cambian datos. `write` añade `create`, `update`, `patch`, `set`, `add`, `remove`, `start`, `pause`, `unpause`, `cancel`, `resume`, `run`, `run-step`, `extend` y `duplicate`. `delete` añade `delete` y `reset`.
 
 ## Conceptos que hay que tener claros
 
@@ -37,12 +37,12 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
   - Donde se pide un paso (`--step`, `leads run-step`) vale el uid, la acción si aparece una sola vez, el nombre del paso (`"Buscador de CIF"`, sin distinguir mayúsculas ni tildes) o la clave de fullData donde deja sus datos (`cif`, `qualification_<uid>`). Si hay varias coincidencias, el error es `AMBIGUOUS_STEP` y lista los uids.
   - `catalog actions` da de cada acción los créditos por lead, las dependencias, si admite repetirse (`multiple`) y el JSON Schema de su `config`.
   - Los valores `default` se rellenan solos. Las dependencias que falten se añaden y se avisa en `warnings`.
-- **Créditos:** 1 crédito = 0,005 €.
+- **Créditos:** la unidad de gasto es el crédito. No conviertas créditos a euros: el precio del crédito depende de cada cliente y Alexandria no lo conoce.
   - Cada acción cobra un precio fijo por lead (`creditCost` en `catalog actions` o `steps list`). Todos los agentes de AI_AGENT cuestan lo mismo.
   - Las ejecuciones fallidas o saltadas (`skipped`) no cobran.
   - `estimatedCreditsPerLead` al crear es el máximo, como si todos los leads pasaran todos los pasos; los filtros (QUALIFY) lo reducen. El consumo real por lead lo da `campaigns usage` (`avgCreditsPerLead`); para estimar una campaña nueva, usa el de una campaña anterior con la misma configuración.
 - **Estados:** consulta `catalog states`.
-  - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`.
+  - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads.
   - Lead: `pending` → estados intermedios (`rooftopFound`, `qualified`, `consumptionEstimated`…) → `completed`, `unQualified` o `failed`.
 - **Área:** círculo de 100 m a 50 km, rectángulo o polígono. El polígono se busca en su rectángulo envolvente y devuelve un aviso.
 
@@ -78,10 +78,15 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `campaigns list [--state a,b] [--search t] [--source maps\|excel\|campaign] [--limit/--offset]` | Lista, las más recientes primero |
 | `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch` y configuración |
 | `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca) |
+| `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create` |
 | `campaigns start <id>` | Arranca una campaña `queued` (gasta créditos) |
 | `campaigns logs <id> [--level error] [--since ts] [--follow]` | Logs de procesamiento (30 días, 5.000 entradas); `--follow` termina solo |
 | `campaigns funnel <id>` | Por paso (`steps[]` con `uid`, `action`, `name`, `reached`, `success`, `failure`, `skipped`, `processing`, `pending`), más `leadStates` |
-| `campaigns usage <id> [--by-lead]` | Créditos cobrados (regla de la pestaña Usage) |
+| `campaigns pause <id>` | Pausa una campaña en marcha: retira lo pendiente, lo que está en vuelo termina sin encolar más y deja de gastar |
+| `campaigns unpause <id>` | Reanuda una campaña `paused` por donde iba, sin repetir ni volver a cobrar pasos ya ejecutados |
+| `campaigns cancel <id> --yes` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola; conserva leads y datos (exportables) |
+| `campaigns usage <id> [--by-lead]` | Créditos cobrados por la campaña (regla de la pestaña Usage; no cuenta la búsqueda en Maps) |
+| `usage [--month YYYY-MM]` | Créditos gastados por toda la cuenta en un mes (por defecto el actual): total, mes anterior, por campaña y por paso. Incluye la búsqueda en Maps, así que no tiene por qué cuadrar con `campaigns usage`. Es `satvolt usage`, no `campaigns usage` |
 | `campaigns extend <id> --max-leads N \| --no-limit` | Más leads sin relanzar: solo busca en los sectores pendientes |
 | `campaigns resume <id> --action A [--config json]` | Añade un paso al final y lo ejecuta sobre los leads existentes |
 | `campaigns reset <id> --yes [--start]` | Borra leads y resultados y vuelve a `queued` (se vuelve a pagar todo) |
@@ -175,7 +180,7 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `VALIDATION_ERROR` (400/422) | Corrige el cuerpo; `details[]` indica `index`, `uid`, `field` y `message` |
 | `INVALID_AREA` | Área mal formada o fuera de límites |
 | `CAMPAIGN_NOT_FOUND`, `LEAD_NOT_FOUND`, `TEMPLATE_NOT_FOUND`, `EXPORT_TABLE_NOT_FOUND` | Id inexistente o de otra empresa |
-| `INVALID_CAMPAIGN_STATE` | `start` solo funciona sobre campañas `queued` |
+| `INVALID_CAMPAIGN_STATE` | `start` solo funciona sobre campañas `queued`; `pause` solo sobre campañas en marcha; `unpause` solo sobre `paused`; `cancel` sobre en marcha, `paused` o `queued` |
 | `CAMPAIGN_RUNNING` / `CAMPAIGN_NOT_STARTED` | Espera a que termine, o arráncala primero |
 | `PENDING_STEP`, `NO_LEADS`, `STEP_NOT_RUNNABLE` | Condiciones de `resume` y `steps run` no cumplidas; lee `message` |
 | `AMBIGUOUS_STEP` | Usa uno de los uids de `details` |
