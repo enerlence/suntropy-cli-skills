@@ -38,13 +38,17 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 |---|---|---|
 | GET | `/campaigns` | `?limit&offset&search&state=a,b&source=maps\|excel\|campaign` |
 | POST | `/campaigns` | Crear (ver abajo) |
+| POST | `/campaigns/estimate` | `{ area, businessGroups?, searchQuery?, templateId? \| fromCampaignId?, sample?, offset? }` → `{ area, mode, businessGroups, places: {atLeast, exhaustive, requests, cached}, byType[], sample[], warnings }`. Preview de FIND_LEADS sin crear nada; `atLeast` es un mínimo y la respuesta se cachea 7 días |
 | GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch` y `configuration` |
 | DELETE | `/campaigns/:id` | Borra la campaña con sectores, leads, ejecuciones, configuración y jobs |
 | POST | `/campaigns/:id/start` | Arranca una campaña `queued` (`409 INVALID_CAMPAIGN_STATE` si no lo está) |
+| POST | `/campaigns/:id/pause` | Pausa una campaña en marcha: retira el trabajo en cola y lo que está en vuelo termina sin encolar más, así que deja de gastar créditos. Solo desde `inProgress`, `sectorized`, `leadsFound` o `analyzed` (si no, `409 INVALID_CAMPAIGN_STATE`). Devuelve `{ campaignId, removedJobs, paused: true }` |
+| POST | `/campaigns/:id/unpause` | Reanuda una campaña `paused` por donde iba: encola el siguiente paso pendiente de cada lead sin repetir ni volver a cobrar los ya ejecutados. Devuelve `{ campaignId, dispatchedLeads, paused: false }`. No confundir con `/resume`, que añade un paso nuevo |
+| POST | `/campaigns/:id/cancel` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola. Conserva los leads y los datos ya obtenidos (siguen consultables y exportables; lo ejecutado ya está cobrado). Devuelve `{ campaignId, removedJobs, canceled: true }`. Para vaciarla, `/reset` |
 | POST | `/campaigns/:id/reset` | `?start=true` para relanzarla. Borra leads y resultados |
 | POST | `/campaigns/:id/extend` | `{ "maxLeads": 500 }` o `{ "maxLeads": null }` para quitar el límite |
 | POST | `/campaigns/:id/resume` | `{ "step": { "action": "AI_AGENT", "config": {...} } }`: lo añade al final y lo ejecuta sobre los leads |
-| GET | `/campaigns/:id/usage` | `?include=leads`: créditos totales, por paso y, opcionalmente, por lead |
+| GET | `/campaigns/:id/usage` | `?include=leads`: créditos totales, por paso y, opcionalmente, por lead. Reconstruye el coste de UNA campaña (una ejecución por lead y paso) y no cuenta la búsqueda en Maps |
 | GET | `/campaigns/:id/logs` | `?limit&sinceTs&level=debug\|log\|warn\|error` → `{ entries, lastTs }` |
 | GET | `/campaigns/:id/funnel` | Por paso LEAD: `reached`, `success`, `failure`, `skipped`, `processing` y `pending`, más `leadStates`. `criteria` (o `null`) añade `met`/`unmet` según el `successIf` del paso |
 
@@ -112,6 +116,14 @@ POST /campaigns
   - `400 UNSUPPORTED_SOURCE`: no es de Maps.
   - `400 VALIDATION_ERROR`: el límite no es mayor que los leads actuales.
 - **Cuándo tiene sentido:** en `GET /campaigns/:id`, `sectorSearch` da `{ total, exhausted, incomplete, queued, unknown }`. Con `incomplete + unknown > 0` todavía puede aparecer algo.
+
+## Consumo de la cuenta
+
+| Método | Ruta | Parámetros / body |
+|---|---|---|
+| GET | `/usage` | `?month=YYYY-MM` (sin él, el mes en curso; cualquier otro formato es `400`). Créditos gastados por toda la empresa en ese mes natural (UTC): `{ month, from, to, credits, executions, previous: { month, credits }, byCampaign: [{ campaignId, name, state, credits, executions }], byStep: [{ action, name, credits, executions }] }` |
+
+Suma todos los cargos del periodo, incluida la búsqueda de leads en Google Maps (`FIND_LEADS`) y las repeticiones de un paso, que es lo que se cobró de verdad. Por eso no tiene por qué cuadrar con `/campaigns/:id/usage`, que reconstruye el coste de una campaña y deja fuera la búsqueda. Es el dato que muestra la sección LeadGen de Alexandria arriba a la derecha.
 
 ## Pipeline
 
@@ -265,8 +277,12 @@ ID=$(curl -s -X POST "$API/campaigns" -H "$H" -H "$J" -d '{"name":"Sonda Elche",
 curl -s -H "$H" "$API/campaigns/$ID/funnel" | jq '.data.steps[] | {name, success, failure, pending}'
 # 4. Ampliar cuando termine y quede área por buscar
 curl -s -X POST "$API/campaigns/$ID/extend" -H "$H" -H "$J" -d '{"maxLeads":null}'
-# 5. Créditos consumidos
+# 5. Créditos consumidos por la campaña, y por toda la cuenta este mes
 curl -s -H "$H" "$API/campaigns/$ID/usage" | jq '.data | {totalCredits, avgCreditsPerLead, byStep}'
+curl -s -H "$H" "$API/usage" | jq '.data | {month, credits, previous, byCampaign: .byCampaign[:5]}'
+# 5b. Parar el gasto de una campaña en marcha y reanudarla después (cancel es definitivo)
+curl -s -X POST "$API/campaigns/$ID/pause" -H "$H"
+curl -s -X POST "$API/campaigns/$ID/unpause" -H "$H"
 # 6. Tabla de exportación: rutas del paso QUALIFY y del agente de CIF, tabla, columna en 2ª posición y CSV
 curl -s -H "$H" "$API/campaigns/$ID/fields?step=QUALIFY" | jq '.data.steps[0].fields[] | {path, type}'
 curl -s -H "$H" "$API/campaigns/$ID/fields?step=cif" | jq '.data.steps[0].fields[] | select(.path | test("cnae")) | .path'

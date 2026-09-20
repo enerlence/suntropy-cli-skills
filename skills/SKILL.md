@@ -232,10 +232,11 @@ suntropy notifications send --to-user <userUID> --as-alexandria --mention \
 
 ### Satvolt (`suntropy satvolt`)
 
-Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (1 credit = 0.005 €): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
+Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
 
 ```bash
 suntropy satvolt templates create --name "Industria" --from-campaign 62
+suntropy satvolt campaigns estimate --circle 37.35,-6.27 --radius 5000 --business-groups businesses   # how many businesses, before spending
 suntropy satvolt campaigns create --name "Sonda" --template "Industria" --circle 37.35,-6.27 --radius 5000 --max-leads 50
 suntropy satvolt campaigns start <id> && suntropy satvolt campaigns funnel <id> --format human
 suntropy satvolt leads list <id> --step QUALIFY --step-status failure

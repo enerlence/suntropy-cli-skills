@@ -45,7 +45,7 @@ Para corregir la plantilla: `templates patch "<nombre>" --steps '[{"uid":"<uid>"
 
 ## Paso 2: Dimensionar y crear la sonda
 
-**Coste de la sonda.** Estímalo con una campaña anterior con la misma base (`campaigns usage <id>` → `avgCreditsPerLead`). Si no hay ninguna, usa `estimatedCreditsPerLead`, que es el máximo. Coste ≈ leads × créditos/lead × 0,005 €. Enséñale al usuario opciones con su coste:
+**Coste de la sonda.** Estímalo con una campaña anterior con la misma base (`campaigns usage <id>` → `avgCreditsPerLead`). Si no hay ninguna, usa `estimatedCreditsPerLead`, que es el máximo. Coste ≈ leads × créditos/lead, en créditos (nunca en euros: el precio del crédito depende del cliente). Enséñale al usuario opciones con su coste:
 
 | Leads | Para qué sirve |
 |---|---|
@@ -132,7 +132,7 @@ suntropy satvolt leads run-step <id> <leadId> ESTIMATE_CONSUMPTION
 
 ## Paso 6: Ampliar por etapas
 
-Antes de cada ampliación, confirma con el usuario el coste estimado. Calcúlalo con los datos de la sonda, no con los del catálogo: leads nuevos × `avgCreditsPerLead` × 0,005 €.
+Antes de cada ampliación, confirma con el usuario el coste estimado. Calcúlalo con los datos de la sonda, no con los del catálogo: leads nuevos × `avgCreditsPerLead`, en créditos.
 
 ```bash
 suntropy satvolt campaigns get <id>            # sectorSearch: incomplete + unknown > 0 → queda área por buscar

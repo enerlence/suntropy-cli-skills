@@ -1,6 +1,6 @@
 Crea, configura y explota una campaña de Satvolt (captación de leads B2B desde Google Maps con un pipeline de enriquecimiento) usando `suntropy satvolt`. Todo lo que aquí se hace es lo mismo que permite la web de Satvolt; la CLI habla con la API pública `/satvolt/api/v1` con el mismo token de `suntropy auth`.
 
-Cada acción del pipeline gasta créditos por lead (1 crédito = 0,005 €). Antes de arrancar o reanudar una campaña, enseña al usuario el coste estimado y pide confirmación.
+Cada acción del pipeline gasta créditos por lead. Habla siempre en créditos, nunca en euros: el precio del crédito depende de cada cliente y no lo conoces. Antes de arrancar o reanudar una campaña, enseña al usuario el coste estimado y pide confirmación.
 
 ## Parámetros de entrada
 
@@ -75,6 +75,30 @@ Coste estimado, antes de arrancar:
 - **Realista:** si hay una campaña anterior con la misma configuración, `campaigns usage <id>` → `avgCreditsPerLead × maxLeads`. Los filtros (QUALIFY) hacen que la mayoría de leads no pague los pasos caros.
 
 Enséñale al usuario el rango y pide confirmación. Las ejecuciones fallidas o saltadas no cobran.
+
+### Comprobar la zona y los filtros antes de crear (`estimate`)
+
+Cuánto encontraría FIND_LEADS sobre un área con unos grupos de negocio, sin crear nada ni gastar créditos:
+
+```bash
+suntropy satvolt campaigns estimate --circle <lat>,<lng> --radius <m> --business-groups businesses --sample 30 --format human
+suntropy satvolt campaigns estimate --bounds <nwLat>,<nwLng>,<seLat>,<seLng> --template "<plantilla>"
+```
+
+Devuelve `places.atLeast` (un **mínimo**: `exhaustive:false` = zonas densas sin explorar), `byType` (tipos que dominan) y `sample` (nombres y direcciones, paginable con `--sample` y `--offset`). Itera `--business-groups` hasta que la muestra sea lo que busca el usuario, y solo entonces `create`. Si `atLeast` es 0, no crees la campaña.
+
+- **`--search-query` casa por nombre, no por categoría**: `manufactura` solo encuentra negocios llamados "Manufacturas …". Para una categoría, grupos de negocio sin consulta; el texto es para marcas o nombres.
+- `industrial_logistics` no incluye `manufacturer`: para fábricas y naves usa `businesses` (y que QUALIFY descarte) o añade tipos sueltos de Google (`manufacturer`, `warehouse`) a los grupos.
+- La estimación se cachea 7 días por zona, grupos y consulta.
+
+### Desde la pantalla "Nueva campaña" del front
+
+Si `front_get_path_context` devuelve `view: "new-campaign"`, el usuario está en `/alexandria/leadgen/new` y dispones de tools propios de esa pantalla. **Sigue la skill de workflow `alexandria-leadgen-campaign`** (repo `alexandria-skills`): zona confirmada en el mapa con `leadgen_propose_area` antes de crear, estimación de negocios, `leadgen_show_campaign` nada más crear, tabla de exportación siempre y lanzamiento solo con el coste en créditos confirmado. En resumen:
+
+- `leadgen_propose_area` bloquea el turno hasta que el usuario confirma o ajusta la zona; crea la campaña con los flags `cli` que devuelve, tal cual.
+- Crea **sin `--start`** y llama a `leadgen_show_campaign` con el `idCampaign`: el panel la pinta y la sigue solo. No describas la configuración entera en el chat.
+- Crea siempre una tabla de exportación: es la vista por defecto de la campaña en el front.
+- Di el coste máximo **en créditos** y espera confirmación explícita antes de `campaigns start`.
 
 ### Paso 3: Arrancar y seguir
 
@@ -205,13 +229,29 @@ suntropy satvolt campaigns extend <campaignId> --no-limit     # barre entero cad
 - Coste ≈ leads nuevos × créditos por lead de la campaña (míralo con `campaigns usage`). Enséñaselo al usuario y pide confirmación antes de ampliar.
 - En las campañas creadas antes de esta función, los sectores salen como `unknown` y cuentan como pendientes: se repiten sus primeras peticiones a Places, pero los duplicados no se crean.
 
+### Pausar, reanudar y cancelar una campaña en marcha
+
+```bash
+suntropy satvolt campaigns pause <campaignId>          # deja de gastar: lo pendiente se retira, lo que está en vuelo termina
+suntropy satvolt campaigns unpause <campaignId>        # sigue por donde iba; no repite ni vuelve a cobrar pasos hechos
+suntropy satvolt campaigns cancel <campaignId> --yes   # DEFINITIVO; conserva leads y datos. Pide confirmación explícita al usuario
+```
+
+- Si el usuario quiere "parar" una campaña, pregunta si es temporal (`pause`) o definitivo (`cancel`). Pausar no pierde nada: los webhooks de pasos asíncronos que lleguen mientras tanto guardan su resultado, y `unpause` continúa.
+- `unpause` no es `resume`: `resume` añade un paso NUEVO a una campaña terminada.
+- Una campaña cancelada no se puede reanudar ni arrancar; lo único que queda es `reset` (que borra los leads) o crear otra. Lo ya ejecutado está cobrado.
+- Estados: `pause` solo desde una campaña en marcha; `unpause` solo desde `paused`; `cancel` desde en marcha, `paused` o `queued`. Si no, 409 `INVALID_CAMPAIGN_STATE`.
+
 ### Consumo, reinicio y borrado
 
 ```bash
-suntropy satvolt campaigns usage <campaignId> --format human   # créditos totales, por lead y por paso
+suntropy satvolt campaigns usage <campaignId> --format human   # créditos de la campaña: totales, por lead y por paso
+suntropy satvolt usage [--month 2026-08] --format human        # créditos de TODA la cuenta en el mes, por campaña y por paso
 suntropy satvolt campaigns reset <campaignId> --yes [--start]  # BORRA leads y resultados; pide confirmación explícita al usuario
 suntropy satvolt campaigns delete <campaignId> --yes           # borra la campaña entera; pide confirmación explícita al usuario
 ```
+
+`satvolt usage` suma todo lo cobrado en el mes, búsqueda en Maps incluida; `campaigns usage` reconstruye el coste de una campaña y no la cuenta. Si el usuario pregunta "cuánto llevamos gastado este mes", es el primero.
 
 Para sacar más leads de una campaña ya terminada, usa `extend` (sección anterior), nunca `reset`.
 
@@ -223,6 +263,6 @@ Los errores salen por stderr como `{ error, status, message, details }`:
 |---|---|
 | 422 `VALIDATION_ERROR` | pasos o config inválidos. `details` lista `index`, `uid`, `action`, `field` y `message` de cada problema. |
 | 400 `INVALID_AREA` | área mal formada o fuera de límites. |
-| 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola: hay que hacer `reset` antes. |
+| 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola (hay que hacer `reset` antes); `pause` sobre una que no está en marcha; `unpause` sobre una que no está `paused`. |
 | 409 `PENDING_STEP`, `STEP_NOT_RUNNABLE` | no se puede reanudar; `message` explica por qué. |
 | 401 `TOKEN_EXPIRED` | renueva el token con `suntropy auth refresh`. |
