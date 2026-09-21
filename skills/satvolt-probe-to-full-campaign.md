@@ -37,7 +37,7 @@ Revisa la base antes de usarla (`templates get "<nombre>"`). Estos son los fallo
 | Revisa | Por qué |
 |---|---|
 | `ESTIMATE_CONSUMPTION` va **después** del paso que obtiene el CNAE y lo referencia en `cnaeTemplate` (p. ej. `{{fullData.cif.response.extras.cnae}}` del agente "Buscador de CIF") | Sin CNAE la confianza no pasa de "media" y el consumo de los fabricantes sale muy por debajo (mediana ×1,77 al añadirlo) |
-| En campañas de naves o industria, `ROOFTOP_LIDAR` justo detrás de `FIND_ROOFTOP` y antes del consumo (1 crédito por lead) | Sin él, la cubierta del lead es el área de la parcela, suelo sin edificar incluido, y las parcelas con varios inmuebles llegan al consumo sin superficie. Detalle en `satvolt-campaign`, sección "Cubierta medida con LiDAR" |
+| En campañas de naves o industria, `ROOFTOP_LIDAR` justo detrás de `FIND_ROOFTOP` y antes del consumo (5 créditos por lead) | Sin él, la cubierta del lead es el área de la parcela, suelo sin edificar incluido, y las parcelas con varios inmuebles llegan al consumo sin superficie. Detalle en `satvolt-campaign`, sección "Cubierta medida con LiDAR" |
 | `businessGroups` no vacío (p. ej. `businesses`) | Con `[]` entran cementerios, iglesias, gasolineras…; QUALIFY los descarta, pero cada uno ya ha pagado FIND_ROOFTOP, consumo y QUALIFY |
 | `qualificationDefinition` de QUALIFY acotada al objetivo | Si incluye "restaurantes, hoteles…", en los cascos urbanos cualifican bares sin CIF ni LinkedIn que después pasan por los agentes caros |
 | Los agentes caros (55 créditos) van detrás de QUALIFY con `filterUnqualifiedLeads: true` | Así solo los pagan los leads cualificados |
