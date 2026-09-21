@@ -34,16 +34,30 @@ suntropy satvolt leads get <id> <leadId> --format json
 | FIND_ROOFTOP: `ECONNREFUSED ...:8090` | En local, falta el servicio `sharing` de Suntropy, donde se suben las imágenes | Levántalo y relanza el paso |
 | ESTIMATE_CONSUMPTION: `ECONNREFUSED ...:8765` o `Consumption model returned 5xx` | Modelo de consumo caído | Levántalo y relanza el paso |
 | ESTIMATE_CONSUMPTION: `Catastral parcel with reference is required` | El lead no tiene parcela (FIND_ROOFTOP falló o no la encontró) | Arregla antes FIND_ROOFTOP en ese lead |
+| ROOFTOP_LIDAR `skipped` | El lead no tiene parcela catastral | Arregla antes FIND_ROOFTOP en ese lead |
+| ROOFTOP_LIDAR `success`, pero `rooftopLidar.available: false` | No se pudo medir; el lead sigue con la cubierta que dejó FIND_ROOFTOP | Mira `rooftopLidar.unavailableReason` (tabla siguiente). Para contarlos, `successIf: ["roofAreaMeters2"]` en el paso y `funnel --mode success` |
+| ESTIMATE_CONSUMPTION con `surfaceSource.origin: unavailable` aunque el lead tiene `rooftopLidar` | ROOFTOP_LIDAR va detrás del consumo (o se añadió con `resume`), o el paso tiene `useLidarSurface: false` | Pon ROOFTOP_LIDAR delante (`steps set <id> <uid LiDAR> --after <uid FIND_ROOFTOP>`) y relanza ESTIMATE_CONSUMPTION en esos leads |
 | QUALIFY o AI_AGENT se quedan en `processing` | El agente no llamó al webhook (Suntropy AI o Devic caídos, o no alcanzan la URL del backend) | Comprueba los servicios; cuando lleguen, relanza el paso |
 | AI_AGENT `skipped` en muchos leads | `skipIfEmpty` apunta a un dato vacío (p. ej. LinkedIn de empresa no encontrado) | No es un error: no se cobra y el lead sigue |
 | El paso sale `success` pero la columna llega vacía | El agente terminó sin error respondiendo que no encontró el dato | Mídelo con `campaigns funnel <id> --mode success`; define `successIf` en el paso y, si no es determinista, `maxRetries` |
 | Paso con config inválida (`VALIDATION_ERROR` al editar) | Falta un campo obligatorio de `configSchema` | Corrígelo con `steps set <id> <uid> --config ...` |
 | Resultados raros en todos los leads (p. ej. consumo con confianza "baja") | Configuración mejorable, no un fallo: `cnaeTemplate` vacío, orden de pasos… | Ver `satvolt-probe-to-full-campaign`, paso 5 |
 
-Si trabajas contra el backend local, comprueba los servicios que usa el pipeline:
+Por qué ROOFTOP_LIDAR no midió (`suntropy satvolt leads full-data <id> <leadId> --path rooftopLidar.unavailableReason`):
+
+| `unavailableReason` | Qué significa | Qué hacer |
+|---|---|---|
+| `No hay teselas PNOA-LiDAR de tercera cobertura para este recorte.` | Zona sin LiDAR del PNOA (fuera de España o aún sin volar) | Nada: no hay nada que medir |
+| `la parcela no tiene cubierta medible` o `no se encontró ningún edificio en la parcela` | Parcela sin edificar, o el negocio no está en la parcela que eligió FIND_ROOFTOP | Es un dato, no un fallo. Revisa la parcela en el mapa si el negocio sí tiene nave |
+| `la cubierta medida (… m²) no cabe en la parcela` | La medición no cuadra con el polígono catastral | Revisa la parcela; la medición se descarta y el lead sigue con la cubierta estándar |
+| `El trabajo LiDAR … sigue en "queued" tras … s.` (o en `"running"`) | El worker estaba descargando otras teselas | Relanza el paso más tarde o sube `maxWaitMs` |
+| `Request failed with status code 503` | La cola LiDAR del servicio solar estaba llena o no respondía | Relanza más tarde |
+| `ECONNREFUSED …`, `status code 401` o `403`, `Falta el procesador LiDAR…` | Servicio solar caído, clave no aceptada o permisos del bucket | Es configuración: avisa al equipo y no relances en bloque |
+
+Si trabajas contra el backend local, comprueba los servicios que usa el pipeline (8086 es el servicio solar, que mide el LiDAR):
 
 ```bash
-lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(8099|8090|8765|8500|8033) '
+lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(8099|8090|8765|8500|8033|8086) '
 ```
 
 ## Paso 3: Elegir cómo relanzar
@@ -82,7 +96,7 @@ suntropy satvolt leads full-data <id> <leadId> --keys consumptionEstimate
 suntropy satvolt campaigns logs <id> --since <lastTs> --level error
 ```
 
-- **Pasos síncronos** (FIND_ROOFTOP, ESTIMATE_CONSUMPTION): el resultado está en segundos.
+- **Pasos síncronos** (FIND_ROOFTOP, ESTIMATE_CONSUMPTION): el resultado está en segundos. ROOFTOP_LIDAR también, salvo en la primera parcela de cada tesela de 1 km², que espera a que se descargue (hasta unos minutos).
 - **Pasos asíncronos** (QUALIFY, AI_AGENT): tardan lo que el agente, de uno a varios minutos.
 - **Cierre de la campaña:** vuelve a `completed` cuando todos sus leads llegan a un estado final.
 

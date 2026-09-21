@@ -40,6 +40,7 @@ Escribe los pasos LEAD en orden en un fichero. SECTORIZE, FIND_LEADS y COMPLETE 
 cat > steps.json <<'EOF'
 [
   { "action": "FIND_ROOFTOP" },
+  { "action": "ROOFTOP_LIDAR" },
   { "action": "QUALIFY", "config": { "qualificationDefinition": "Nave industrial con cubierta > 1000 m2 y actividad con consumo diurno" } },
   { "action": "AI_AGENT", "config": { "customName": "Buscador de CIF y Facturacion", "agentId": "<id>", "outputKey": "cif" } },
   { "action": "ESTIMATE_CONSUMPTION", "config": { "tariffTemplate": "3.0TD", "cnaeTemplate": "{{fullData.cif.response.extras.cnae}}" } }
@@ -47,7 +48,54 @@ cat > steps.json <<'EOF'
 EOF
 ```
 
-ESTIMATE_CONSUMPTION usa la superficie construida del Catastro, el código postal y, si se le pasa, el CNAE. Sin CNAE la confianza no pasa de "media" y la estimación anual de los fabricantes sale muy por debajo. Colócalo después del paso que obtiene el CNAE y referencia su salida en `cnaeTemplate`.
+ESTIMATE_CONSUMPTION usa la superficie construida del Catastro, el código postal y, si se le pasa, el CNAE. Sin CNAE la confianza no pasa de "media" y la estimación anual de los fabricantes sale muy por debajo. Colócalo después del paso que obtiene el CNAE y referencia su salida en `cnaeTemplate`. Cuando el Catastro no declara superficie, usa la cubierta que midió ROOFTOP_LIDAR, si ese paso va antes (sección siguiente).
+
+### Cubierta medida con LiDAR (`ROOFTOP_LIDAR`)
+
+Mide la cubierta real de la parcela del lead cruzando su polígono catastral con la nube de puntos LiDAR del PNOA (IGN/CNIG): qué edificios hay, cuánta cubierta tiene cada uno, a qué altura y con qué aguas (plana o inclinada, con pendiente y orientación). Es un paso propio, no una opción de FIND_ROOFTOP: solo se ejecuta si está en el pipeline. Cuesta 1 crédito por lead.
+
+**Por qué.** Sin él, las únicas superficies son las del Catastro, y las dos fallan justo en los polígonos industriales:
+
+- **El área de parcela incluye el suelo sin edificar** (patios, playas de carga, parcelas a medio construir). En 46 leads industriales reales, la relación parcela/construida tuvo mediana 0,73 y mucha dispersión; la de la cubierta medida, 0,93.
+- **La superficie construida falta a menudo:** en parcelas con varios inmuebles, en el catastro foral (publica la geometría, no la superficie) y cuando el OVC no responde. Cuando existe, suma todas las plantas.
+
+**Qué cambia en el resto del pipeline:**
+
+| Dónde | Efecto |
+|---|---|
+| `fullData.roofSurface` | La cubierta del lead. Con medición válida es la medida (`origin: lidar`, `quality: premium`). Sin este paso es el área de la parcela (`origin: parcel_area`), con el suelo incluido. |
+| ESTIMATE_CONSUMPTION | Sin superficie construida en el Catastro, usa la cubierta medida en vez de estimar sin superficie: `surfaceSource.origin: lidar_roof` y `surfaceIsFootprint: true` (es huella en planta). Si el Catastro la declara, manda el Catastro y la medida queda en `surfaceSource.lidarRoofAreaM2` para comparar. `useLidarSurface: false` lo desactiva. Con `surfaceFallback: parcelArea`, el área de parcela solo entra si tampoco hay medición. |
+| Parcela compartida | Si varios leads de la campaña comparten parcela, el consumo de la parcela se reparte por la superficie del edificio en que cae cada uno (`attributionBasis: lidar_building`), no a partes iguales. Para sumar la demanda de una zona usa `attributableKwh`, no `annualKwh`. |
+
+**Orden:** `FIND_ROOFTOP → ROOFTOP_LIDAR → … → ESTIMATE_CONSUMPTION`. ROOFTOP_LIDAR depende de FIND_ROOFTOP, que le da la parcela. ESTIMATE_CONSUMPTION no lo declara como dependencia: si ROOFTOP_LIDAR va detrás, el consumo no lo usa y el backend no avisa. Si QUALIFY tiene que filtrar por tamaño de cubierta, ponlo antes y pásale la cifra en su `messageTemplate` (`{{fullData.roofSurface.roofAreaM2}}` m², origen `{{fullData.roofSurface.origin}}`): el cualificador no la recibe por su cuenta. El template sustituye al mensaje por defecto, así que incluye también los datos del negocio que el agente necesite. Delante de QUALIFY lo pagan también los leads que se descarten, a 1 crédito cada uno.
+
+**Cuándo usarlo:**
+
+- Campañas de naves, industria o logística: es donde el área de parcela más engaña y donde más parcelas se comparten.
+- Cuando se va a dimensionar una instalación o a filtrar por cubierta: los m², la altura y las aguas son lo que necesita un estudio solar.
+- Zonas de catastro foral, parcelas con muchos inmuebles o campañas en las que el consumo sale con `surfaceSource.origin: unavailable` en muchos leads.
+
+**Cuándo no aporta:**
+
+- Fuera de España, o donde el PNOA no tiene aún tercera cobertura: el lead se queda sin medición.
+- Edificios de varias plantas (oficinas, hoteles, bloques): la huella se queda corta frente a lo construido. Si el Catastro declara superficie, manda él; si no, toma el consumo con `surfaceIsFootprint: true` como un mínimo.
+- Leads sin parcela catastral (FIND_ROOFTOP no la encontró).
+
+**Si no puede medir, el lead sigue.** Por defecto el paso termina en `success` con `rooftopLidar.available: false` y el motivo en `rooftopLidar.unavailableReason`; el lead conserva la cubierta que dejó FIND_ROOFTOP. Por eso `funnel` no distingue medido de no medido: pon `successIf: ["roofAreaMeters2"]` en el paso y mira `campaigns funnel <id> --mode success`. Con `failOnServiceError: true` un fallo del servicio falla el paso y se reintenta; úsalo solo si la medición es imprescindible.
+
+**Tiempo.** El LiDAR se descarga por teselas de 1 km² (40–90 MB) y se guarda en caché. La primera parcela de una tesela espera la descarga, de segundos a pocos minutos; las siguientes de la misma zona tardan segundos. Los leads de una campaña se concentran: 442 leads reales cayeron en 38 teselas. `maxWaitMs` (5 min por defecto) es lo que espera cada lead antes de seguir sin medición.
+
+**Añadirlo a una campaña ya hecha:** `campaigns resume <id> --action ROOFTOP_LIDAR` (sección "Reanudar con un paso nuevo"). El consumo ya calculado no cambia solo: relanza ESTIMATE_CONSUMPTION (`leads run-step`, 1 crédito por lead) en los leads que quieras recalcular, sobre todo en los que salieron con `surfaceSource.origin: unavailable`.
+
+Columnas útiles para la tabla de exportación:
+
+```bash
+suntropy satvolt export-tables columns add <tableId> --columns \
+"Cubierta m²=fullData.roofSurface.roofAreaM2:number;Origen cubierta=fullData.roofSurface.origin;\
+Edificios=fullData.rooftopLidar.buildingCount:number;Altura máx. (m)=fullData.rooftopLidar.maxHeightMeters:number;\
+Sin LiDAR, motivo=fullData.rooftopLidar.unavailableReason;\
+Consumo atribuible (kWh)=fullData.consumptionEstimate.attributableKwh:number"
+```
 
 ### Paso 2: Crear la campaña
 

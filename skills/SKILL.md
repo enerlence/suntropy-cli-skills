@@ -232,7 +232,7 @@ suntropy notifications send --to-user <userUID> --as-alexandria --mention \
 
 ### Satvolt (`suntropy satvolt`)
 
-Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
+Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (cadastral parcel, roof measured on the PNOA LiDAR, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
 
 ```bash
 suntropy satvolt templates create --name "Industria" --from-campaign 62

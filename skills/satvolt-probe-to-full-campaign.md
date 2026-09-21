@@ -37,6 +37,7 @@ Revisa la base antes de usarla (`templates get "<nombre>"`). Estos son los fallo
 | Revisa | Por qué |
 |---|---|
 | `ESTIMATE_CONSUMPTION` va **después** del paso que obtiene el CNAE y lo referencia en `cnaeTemplate` (p. ej. `{{fullData.cif.response.extras.cnae}}` del agente "Buscador de CIF") | Sin CNAE la confianza no pasa de "media" y el consumo de los fabricantes sale muy por debajo (mediana ×1,77 al añadirlo) |
+| En campañas de naves o industria, `ROOFTOP_LIDAR` justo detrás de `FIND_ROOFTOP` y antes del consumo (1 crédito por lead) | Sin él, la cubierta del lead es el área de la parcela, suelo sin edificar incluido, y las parcelas con varios inmuebles llegan al consumo sin superficie. Detalle en `satvolt-campaign`, sección "Cubierta medida con LiDAR" |
 | `businessGroups` no vacío (p. ej. `businesses`) | Con `[]` entran cementerios, iglesias, gasolineras…; QUALIFY los descarta, pero cada uno ya ha pagado FIND_ROOFTOP, consumo y QUALIFY |
 | `qualificationDefinition` de QUALIFY acotada al objetivo | Si incluye "restaurantes, hoteles…", en los cascos urbanos cualifican bares sin CIF ni LinkedIn que después pasan por los agentes caros |
 | Los agentes caros (55 créditos) van detrás de QUALIFY con `filterUnqualifiedLeads: true` | Así solo los pagan los leads cualificados |
@@ -96,7 +97,10 @@ suntropy satvolt export-tables create <id> --name "Validación sonda" --columns 
 CIF=fullData.cif.response.cif;CNAE=fullData.cif.response.extras.cnae;\
 LinkedIn=fullData.companyLinkedin.response.linkedinUrl;\
 Consumo kWh=fullData.consumptionEstimate.annualKwh:number;\
+Consumo atribuible kWh=fullData.consumptionEstimate.attributableKwh:number;\
 Confianza=fullData.consumptionEstimate.confidence.label;\
+Origen superficie=fullData.consumptionEstimate.surfaceSource.origin;\
+Cubierta m²=fullData.roofSurface.roofAreaM2:number;Origen cubierta=fullData.roofSurface.origin;\
 Parcela=fullData.catastralParcel.catastralReference"
 suntropy satvolt export-tables data <tableId> --limit 100 --format human
 # Añadir o ajustar columnas sin rehacer la tabla
@@ -107,8 +111,10 @@ suntropy satvolt export-tables columns add <tableId> --label Decisor --path full
 |---|---|---|
 | Muchos tipos que no son negocio | `businessGroups` vacío | Pon `businesses` en la configuración o la plantilla |
 | Cualifican bares y restaurantes sin CIF | La definición de QUALIFY incluye el terciario | Acótala antes de ampliar |
-| Confianza "baja" con 56.431 kWh repetido | El paso no recibió ni CNAE ni superficie | Revisa `cnaeTemplate` y el orden. Las parcelas con varios inmuebles no tienen superficie: es lo esperado |
-| Varios leads con la misma `Parcela` y el mismo consumo | FIND_ROOFTOP asignó a varias empresas de un polígono la misma parcela grande | Anótalo como limitación; no bloquea |
+| Confianza "baja" con 56.431 kWh repetido | El paso no recibió ni CNAE ni superficie | Revisa `cnaeTemplate` y el orden. Las parcelas con varios inmuebles no tienen superficie en el Catastro: con `ROOFTOP_LIDAR` delante del consumo se usa la cubierta medida (`Origen superficie` = `lidar_roof`) |
+| Varios leads con la misma `Parcela` y el mismo consumo | Comparten parcela (varias empresas en la misma nave o polígono) y `annualKwh` es el consumo de toda la parcela | Usa `Consumo atribuible`, la parte de cada uno. Con `ROOFTOP_LIDAR` se reparte por el edificio que ocupa cada empresa; sin él, a partes iguales |
+| `Origen cubierta` = `parcel_area` en naves | La cubierta es el área de la parcela, con el suelo sin edificar | Añade `ROOFTOP_LIDAR` (paso 5) |
+| `ROOFTOP_LIDAR` en `success` pero `Origen cubierta` distinto de `lidar` | No se pudo medir; el motivo está en `fullData.rooftopLidar.unavailableReason` | `satvolt-lead-troubleshooting` |
 | CIF o LinkedIn muy bajos | Zona rural o negocios pequeños | Espera menos decisores por lead; ajusta el coste esperado |
 | Consumo o QUALIFY en `failure` | Servicio caído o error de config | `satvolt-lead-troubleshooting` |
 
@@ -127,6 +133,8 @@ suntropy satvolt templates patch "Greenvolt industria" --steps '[{"uid":"<uid co
 ```bash
 suntropy satvolt leads run-step <id> <leadId> ESTIMATE_CONSUMPTION
 ```
+
+- **Falta `ROOFTOP_LIDAR`:** añádelo a la plantilla detrás de FIND_ROOFTOP para la próxima campaña. En esta, `campaigns resume <id> --action ROOFTOP_LIDAR` lo añade al final y lo ejecuta sobre los leads que llegaron al último paso, y después hay que relanzar ESTIMATE_CONSUMPTION en los leads que se quieran recalcular: el consumo no cambia solo.
 
 - **Relanzar todo (`reset`):** solo si la configuración invalida la sonda entera. Borra los leads y los vuelve a pagar.
 
@@ -179,6 +187,7 @@ El pipeline completo necesita estos servicios levantados. Compruébalo con `lsof
 | Backend Satvolt | 8099 | La CLI da `ECONNREFUSED` |
 | `sharing` de Suntropy | 8090 | FIND_ROOFTOP falla con `ECONNREFUSED ...:8090` |
 | Modelo de consumo | 8765 | ESTIMATE_CONSUMPTION falla |
+| Servicio solar con su worker LiDAR (Redis y bucket S3) | 8086 (`SOLAR_API_BASE_URL`) | ROOFTOP_LIDAR termina sin medición, con el error en `rooftopLidar.unavailableReason` |
 | Suntropy AI | 8500 | QUALIFY no arranca |
 | Devic | 8033 | AI_AGENT no arranca |
 
