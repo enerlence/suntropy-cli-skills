@@ -158,6 +158,7 @@ La `action` de un paso existente no se puede cambiar. Si la campaña está en ma
 | GET | `/campaigns/:id/leads` | `?limit&offset&name&search&state=a,b&step=<paso>&stepStatus=reached\|success\|failure\|skipped\|processing\|pending&include=steps` |
 | GET | `/campaigns/:id/leads/:leadId` | `?fullData=true` (todo) o `?fullData=clave1,clave2` |
 | POST | `/campaigns/:id/leads/:leadId/steps/:step/run` | `{ "mode": "only" \| "continue", "force": false }` → 202 |
+| GET | `/campaigns/:id/leads/:leadId/rooftop-lidar/geometry` | Forma completa de la cubierta medida por ROOFTOP_LIDAR (ver abajo) |
 | GET | `/campaigns/:id/fields` | `?sample=25` (máx. 100) `&step=<paso>`: campos para columnas de exportación, agrupados por paso (ver *Tablas de exportación*) |
 
 **`<paso>`** (en `step=` de `/leads` y `/fields`, y en la ruta de `run`): uid, acción si aparece una sola vez, nombre completo del paso (`customName`, sin distinguir mayúsculas ni tildes; no vale un trozo) o clave de fullData donde deja sus datos (`cif`, `qualification_<uid>`). Varias coincidencias: `400 AMBIGUOUS_STEP` con los uids en `details`; ninguna: `404 STEP_NOT_FOUND` con la lista de pasos.
@@ -173,6 +174,10 @@ La `action` de un paso existente no se puede cambiar. Si la campaña está en ma
   - `409 DEPENDENCY_NOT_MET` (con `details.missing`): faltan dependencias; `force: true` las ignora.
   - `409 STEP_IN_PROGRESS`: un paso asíncrono sigue esperando su webhook.
   - `400 STEP_NOT_RUNNABLE`: COMPLETE, paso desactivado o que no es LEAD.
+
+**Geometría de la cubierta LiDAR:** el lead guarda en `fullData.rooftopLidar` las cifras y un contorno simplificado de cada edificio. La forma completa (patios y cada agua con la altura de su plano) no se guarda: este endpoint la lee de la medición guardada, en uno o dos segundos. Es para pintar la cubierta en 3D; para cifras y columnas basta `fullData`.
+- **Respuesta:** `{ buildings, matchesMeasurement }`. Cada edificio: `id`, `roofAreaMeters2`, `heightMeters`, `footprint` (`[lng, lat]`), `holes` y `facets`; cada agua con `type`, `tiltDegrees`, `azimuthDegrees`, `areaMeters2` y `parts` (`ring` con vértices `[lng, lat, altura en m]`). `matchesMeasurement: false` si el medidor cambió desde que se midió el lead: relanza ROOFTOP_LIDAR para que coincidan.
+- **Errores:** `404 LIDAR_NOT_MEASURED` (el lead no tiene medición), `503 LIDAR_UNAVAILABLE` (el servicio no respondió a tiempo; reintenta) y `404 LEAD_NOT_FOUND`.
   - `404 LEAD_NOT_FOUND`.
   - `409 CAMPAIGN_NOT_STARTED`.
 
@@ -240,8 +245,9 @@ La `action` de un paso existente no se puede cambiar. Si la campaña está en ma
 - **Campos fijos de los pasos más usados:**
   - QUALIFY: `fullData.<clave>.qualifies` (boolean) y `.explanation`.
   - AI_AGENT: `fullData.<clave>.response.<campo>` (depende del agente), más `threadId`, `state` y `completedAt`.
-  - ESTIMATE_CONSUMPTION: `fullData.consumptionEstimate.annualKwh`, `.confidence.label`, `.inputsUsed.cnae_2`…
+  - ESTIMATE_CONSUMPTION: `fullData.consumptionEstimate.annualKwh`, `.confidence.label`, `.inputsUsed.cnae_2`, `.surfaceSource.origin` (de dónde salió la superficie: `catastro_sfc`, `lidar_roof`, `parcel_area`…) y, en parcelas compartidas, `.attributableKwh` (la parte del lead)…
   - FIND_ROOFTOP: `fullData.catastralParcel.catastralReference` y `.area`.
+  - ROOFTOP_LIDAR: `fullData.rooftopLidar.roofAreaMeters2`, `.buildingCount`, `.maxHeightMeters`, `.flatAreaMeters2`, `.parcelCoverage` y, si no pudo medir, `.unavailableReason`. `fullData.roofSurface.roofAreaM2` y `.origin` son la cubierta final del lead, medida o no (también la escribe FIND_ROOFTOP).
   - `synthetic.googleMapsUrl`: enlace a Google Maps construido con las coordenadas.
 - **`dynamic`:** partes cuya forma depende de la configuración del paso (respuesta de un agente o de un webhook). Sus campos aparecen en `fields` cuando hay leads con respuesta o se deducen de otra campaña; si no hay ninguno, la ruta se completa a mano (`fullData.<clave>.response.<campo>`).
 - **`coverage`:** parte de los leads muestreados con ese dato (null si la campaña no tiene leads). Una cobertura baja en un campo de un paso posterior a un filtro (QUALIFY) es normal.

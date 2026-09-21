@@ -43,7 +43,7 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
   - `estimatedCreditsPerLead` al crear es el máximo, como si todos los leads pasaran todos los pasos; los filtros (QUALIFY) lo reducen. El consumo real por lead lo da `campaigns usage` (`avgCreditsPerLead`); para estimar una campaña nueva, usa el de una campaña anterior con la misma configuración.
 - **Estados:** consulta `catalog states`.
   - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads.
-  - Lead: `pending` → estados intermedios (`rooftopFound`, `qualified`, `consumptionEstimated`…) → `completed`, `unQualified` o `failed`.
+  - Lead: `pending` → estados intermedios (`rooftopFound`, `rooftopLidarMeasured`, `qualified`, `consumptionEstimated`…) → `completed`, `unQualified` o `failed`.
 - **Área:** círculo de 100 m a 50 km, rectángulo o polígono. El polígono se busca en su rectángulo envolvente y devuelve un aviso.
 
 ## Catálogo
