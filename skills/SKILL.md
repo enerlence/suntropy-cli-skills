@@ -239,6 +239,7 @@ suntropy satvolt templates create --name "Industria" --from-campaign 62
 suntropy satvolt campaigns estimate --circle 37.35,-6.27 --radius 5000 --business-groups businesses   # how many businesses, before spending
 suntropy satvolt campaigns create --name "Sonda" --template "Industria" --circle 37.35,-6.27 --radius 5000 --max-leads 50
 suntropy satvolt campaigns start <id> && suntropy satvolt campaigns funnel <id> --format human
+suntropy satvolt campaigns create-from-excel empresas.xlsx --name "CRM" --name-column Empresa --geocode-columns "Dirección,Municipio" --template "Industria"   # own list instead of Maps
 suntropy satvolt leads list <id> --step QUALIFY --step-status failure
 suntropy satvolt leads run-step <id> <leadId> ESTIMATE_CONSUMPTION
 suntropy satvolt campaigns extend <id> --max-leads 500        # more leads without relaunching

@@ -255,6 +255,51 @@ suntropy satvolt campaigns delete <campaignId> --yes           # borra la campa�
 
 Para sacar más leads de una campaña ya terminada, usa `extend` (sección anterior), nunca `reset`.
 
+### Campaña desde un Excel (listado propio de empresas)
+
+Cuando el usuario ya tiene las empresas (un CRM, un listado de un polígono, una feria), la campaña no busca en Maps: importa las filas del Excel como leads y les pasa el pipeline. Una fila = un lead. Se lee la **primera hoja** y las cabeceras van en la **fila 1**.
+
+**1. Mira qué columnas hay** (no crea nada):
+
+```bash
+suntropy satvolt campaigns excel-preview empresas.xlsx --sample 10 --format human
+```
+
+Devuelve `headers`, `sampleRows` y `totalRows`. Identifica la columna del nombre comercial (obligatoria) y cómo localizar cada empresa: o una columna con coordenadas `"lat,lng"`, o las columnas que forman la dirección (calle, CP, municipio).
+
+**2. Sin coordenadas, prueba la geocodificación** antes de pagar por todos los leads (cuesta una petición a Google por fila probada):
+
+```bash
+suntropy satvolt campaigns excel-geocode-test empresas.xlsx --columns "Dirección,CP,Municipio" --region Cantabria --sample 5 --format human
+```
+
+Cada fila sale con `query`, `success`, `coordinates` y `formattedAddress`. Si fallan varias, cambia el orden o añade columnas (municipio, provincia) o `--region`. No sigas con una muestra que no resuelve.
+
+**3. Crea la campaña** con el pipeline de siempre (plantilla, campaña base o `--steps`):
+
+```bash
+suntropy satvolt campaigns create-from-excel empresas.xlsx --name "Clientes CRM · Cantabria" \
+  --name-column Empresa --geocode-columns "Dirección,CP,Municipio" --region Cantabria \
+  --phone-column Teléfono --url-column Web --email-column Email \
+  --template "Industria" --max-leads 100
+```
+
+- Mapeo por flags (`--name-column`, `--coordinates-column`, `--geocode-columns`, `--address-columns`, `--phone-column`, `--url-column`, `--email-column`, `--type-column`, `--country`) o entero con `--mapping @mapping.json` (`{ "commercialName": {"column":"Empresa"}, "address": [{"column":"Calle"},{"literal":"Cantabria"}], ... }`).
+- `--max-leads` importa solo las primeras N filas.
+- La respuesta trae `leads` (filas importadas), `configuration`, `estimatedCreditsPerLead` y `warnings`. Queda en `queued`; `leadgen_show_campaign` y la tabla de exportación funcionan igual que en una campaña de Maps.
+
+**Qué cambia respecto a una campaña de Maps:**
+
+| | Maps | Excel |
+|---|---|---|
+| Pasos de entrada | SECTORIZE + FIND_LEADS | IMPORT_LEADS (gratis) y, con `--geocode-columns`, GEOCODE_ADDRESS (10 créditos por lead: resuelve la empresa a un sitio de Google Maps por nombre y dirección) |
+| Área | Obligatoria | No hay; `--region` solo orienta la geocodificación |
+| `extend` | Sí | No (`400 UNSUPPORTED_SOURCE`): los leads quedan fijados al crearla |
+| Grupos de negocio | Filtran la búsqueda | No aplican |
+| Email del Excel | — | `fullData.importMetadata.email`, usable en columnas y plantillas (`{{fullData.importMetadata.email}}`) |
+
+Coste máximo = `estimatedCreditsPerLead × leads` (más 10 por lead si geocodifica). Enséñaselo al usuario en créditos y pide confirmación antes de `campaigns start`.
+
 ## Errores
 
 Los errores salen por stderr como `{ error, status, message, details }`:
@@ -263,6 +308,8 @@ Los errores salen por stderr como `{ error, status, message, details }`:
 |---|---|
 | 422 `VALIDATION_ERROR` | pasos o config inválidos. `details` lista `index`, `uid`, `action`, `field` y `message` de cada problema. |
 | 400 `INVALID_AREA` | área mal formada o fuera de límites. |
+| 400 `INVALID_EXCEL` | el Excel no tiene filas, o falta el nombre comercial o la forma de localizar cada fila (coordenadas o columnas a geocodificar). |
+| 400 `UNSUPPORTED_SOURCE` | `extend` sobre una campaña de Excel o copiada de otra: sus leads no se amplían. |
 | 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola (hay que hacer `reset` antes); `pause` sobre una que no está en marcha; `unpause` sobre una que no está `paused`. |
 | 409 `PENDING_STEP`, `STEP_NOT_RUNNABLE` | no se puede reanudar; `message` explica por qué. |
 | 401 `TOKEN_EXPIRED` | renueva el token con `suntropy auth refresh`. |
