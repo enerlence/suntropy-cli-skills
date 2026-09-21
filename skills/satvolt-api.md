@@ -39,6 +39,9 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 | GET | `/campaigns` | `?limit&offset&search&state=a,b&source=maps\|excel\|campaign` |
 | POST | `/campaigns` | Crear (ver abajo) |
 | POST | `/campaigns/estimate` | `{ area, businessGroups?, searchQuery?, templateId? \| fromCampaignId?, sample?, offset? }` → `{ area, mode, businessGroups, places: {atLeast, exhaustive, requests, cached}, byType[], sample[], warnings }`. Preview de FIND_LEADS sin crear nada; `atLeast` es un mínimo y la respuesta se cachea 7 días |
+| POST | `/campaigns/excel/preview` | multipart `file` (+ `?sampleSize`) → `{ headers, sampleRows, totalRows }` |
+| POST | `/campaigns/excel/geocode-test` | multipart `file` + `payload` JSON `{ columns[], sampleSize?, region? }` → `{ testId, results[{row, query, success, coordinates, formattedAddress, error}] }` |
+| POST | `/campaigns/from-excel` | multipart `file` + `payload` JSON `{ name, columnMapping{commercialName{column\|literal}, coordinates?, address?[], phone?, url?, email?, country?, googlePlacesType?}, geocoding?{enabled, columns[]}, templateId? \| fromCampaignId? \| steps?, maxLeads?, region?, description?, start? }` → como `POST /campaigns` más `leads`. Origen `excel`: entra por IMPORT_LEADS (+ GEOCODE_ADDRESS si geocodifica) y no admite `extend` |
 | GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch` y `configuration` |
 | DELETE | `/campaigns/:id` | Borra la campaña con sectores, leads, ejecuciones, configuración y jobs |
 | POST | `/campaigns/:id/start` | Arranca una campaña `queued` (`409 INVALID_CAMPAIGN_STATE` si no lo está) |

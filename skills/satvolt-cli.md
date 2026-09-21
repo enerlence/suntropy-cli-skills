@@ -79,6 +79,9 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch` y configuración |
 | `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca) |
 | `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create` |
+| `campaigns excel-preview <file> [--sample n]` | Cabeceras y primeras filas de un Excel (primera hoja, cabeceras en la fila 1), para decidir el mapeo |
+| `campaigns excel-geocode-test <file> --columns h1,h2 [--sample n] [--region t]` | Geocodifica las primeras filas con esas columnas: comprueba que las direcciones resuelven antes de crear (una petición a Google por fila) |
+| `campaigns create-from-excel <file> --name N --name-column h (--coordinates-column h \| --geocode-columns h1,h2) [--address-columns] [--phone-column] [--url-column] [--email-column] [--type-column] [--country t] [--mapping @json] [base] [--max-leads n] [--region t] [--start]` | Crea una campaña con las filas del Excel como leads (sin búsqueda en Maps); no se puede ampliar después |
 | `campaigns start <id>` | Arranca una campaña `queued` (gasta créditos) |
 | `campaigns logs <id> [--level error] [--since ts] [--follow]` | Logs de procesamiento (30 días, 5.000 entradas); `--follow` termina solo |
 | `campaigns funnel <id>` | Por paso (`steps[]` con `uid`, `action`, `name`, `reached`, `success`, `failure`, `skipped`, `processing`, `pending`), más `leadStates` |
