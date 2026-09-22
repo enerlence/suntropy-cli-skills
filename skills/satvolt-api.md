@@ -81,6 +81,18 @@ curl -s -X PATCH -H "$H" "$API/campaigns/$ID/configuration" \
 curl -s -H "$H" "$API/campaigns/$ID/funnel" | jq '.data.steps[] | {name, reached, criteria}'
 ```
 
+### Mensaje de un AI_AGENT (`messageTemplate`)
+
+El agente recibe, por cada lead, su `config.messageTemplate` con las variables sustituidas:
+`{{lead.commercialName}}`, `{{lead.url}}`, `{{lead.address}}`, `{{lead.phone}}`,
+`{{lead.country}}`, `{{lead.coordinates}}`, `{{lead.googlePlacesType}}` y
+`{{fullData.<clave>.<ruta>}}` (de otro agente, `{{fullData.<outputKey>.response.<campo>}}`).
+Los datos del lead son columnas, no claves de `fullData`: si la plantilla no los nombra, el
+agente no sabe qué empresa investigar. Sin plantilla recibe `{ lead, fullData }` en crudo;
+con una plantilla sin variables, el mismo texto en todos los leads. Los pasos avisan de
+ambos casos en `warnings`. Un paso que depende de la salida de otro lleva `skipIfEmpty`
+con esa ruta. Plantillas probadas por agente: skill `satvolt-campaign`, paso 1.
+
 ### Crear campaña
 
 ```json
