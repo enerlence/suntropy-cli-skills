@@ -41,13 +41,48 @@ cat > steps.json <<'EOF'
 [
   { "action": "FIND_ROOFTOP" },
   { "action": "QUALIFY", "config": { "qualificationDefinition": "Nave industrial con cubierta > 1000 m2 y actividad con consumo diurno" } },
-  { "action": "AI_AGENT", "config": { "customName": "Buscador de CIF y Facturacion", "agentId": "<id>", "outputKey": "cif" } },
+  { "action": "AI_AGENT", "config": { "customName": "Buscador de CIF y Facturacion", "agentId": "<id>", "outputKey": "cif",
+      "messageTemplate": "companyName: {{lead.commercialName}}\nwebsite: {{lead.url}}\naddress: {{lead.address}}" } },
   { "action": "ESTIMATE_CONSUMPTION", "config": { "tariffTemplate": "3.0TD", "cnaeTemplate": "{{fullData.cif.response.extras.cnae}}" } }
 ]
 EOF
 ```
 
 ESTIMATE_CONSUMPTION usa la superficie construida del Catastro, el código postal y, si se le pasa, el CNAE. Sin CNAE la confianza no pasa de "media" y la estimación anual de los fabricantes sale muy por debajo. Colócalo después del paso que obtiene el CNAE y referencia su salida en `cnaeTemplate`.
+
+#### AI_AGENT: el agente solo sabe lo que le manda la plantilla
+
+Cada `AI_AGENT` recibe un mensaje por lead: su `messageTemplate`. El nombre, la web y la dirección son columnas del lead, no claves de `fullData`, así que si la plantilla no los nombra el agente no sabe qué empresa investigar. Pasó en una campaña de prueba: sin plantilla, los agentes de CIF y de LinkedIn respondieron "entrada inválida" en todos los leads, y el de decisores, con una plantilla de texto fijo, buscó sin empresa y guardó directivos de otras compañías.
+
+- **Datos del lead:** `{{lead.commercialName}}`, `{{lead.url}}`, `{{lead.address}}`, `{{lead.phone}}`, `{{lead.country}}`, `{{lead.coordinates}}`, `{{lead.googlePlacesType}}`.
+- **Resultados de pasos anteriores:** `{{fullData.<clave>.<ruta>}}`; de otro agente, `{{fullData.<outputKey>.response.<campo>}}`. Un objeto se inserta como JSON. El paso que lee la salida de otro va **detrás** de él.
+- **Plantilla sin variables:** todos los leads reciben el mismo texto. Nunca pongas solo instrucciones ("identifica decisores…"): añade siempre los datos del lead.
+- **Sin plantilla:** el agente recibe el lead y su `fullData` en crudo. Funciona, pero peor que nombrar lo que necesita.
+- **`skipIfEmpty`** en el paso que depende de otro, apuntando al dato que necesita: si no llegó, el paso se salta y no se cobra.
+- **`warnings`:** `campaigns create`, `steps add|set` y `config update` avisan de un agente sin plantilla, con plantilla sin variables o con una variable que no existe o que ningún paso anterior escribe. Léelos y corrígelos antes de lanzar.
+
+La descripción de cada agente en `catalog ai-agents` dice qué entrada espera. Plantillas probadas para la cadena CIF → LinkedIn de empresa → decisores:
+
+```json
+[
+  { "action": "AI_AGENT", "config": {
+      "customName": "CIF y CNAE", "agentId": "<id de Buscador de CIF y Facturacion>", "outputKey": "cif",
+      "messageTemplate": "companyName: {{lead.commercialName}}\nwebsite: {{lead.url}}\naddress: {{lead.address}}" } },
+  { "action": "AI_AGENT", "config": {
+      "customName": "LinkedIn de empresa", "agentId": "<id de Buscador de Perfiles Línkedin Compañia>", "outputKey": "companyLinkedin",
+      "messageTemplate": "Razón social: {{lead.commercialName}}\nWeb: {{lead.url}}\nDirección: {{lead.address}}" } },
+  { "action": "AI_AGENT", "config": {
+      "customName": "Decisores LinkedIn", "agentId": "<id de Buscador decisores Linkedin B2B>", "outputKey": "decisoresLinkedin",
+      "messageTemplate": "Empresa LinkedIn URL: {{fullData.companyLinkedin.response.linkedinUrl}}\nEmpresa: {{lead.commercialName}}\nProducto/Servicio a ofrecer: <lo que vende el usuario>\nMáximo perfiles relevantes adicionales: 3",
+      "skipIfEmpty": "fullData.companyLinkedin.response.linkedinUrl" } }
+]
+```
+
+| Agente | Lo que devuelve (bajo `fullData.<outputKey>.response`) |
+|---|---|
+| Buscador de CIF y Facturacion | `cif`, `revenue.value`, `employees.value`, `extras.cnae` |
+| Buscador de Perfiles Línkedin Compañia | `linkedinUrl` (o `null`), `confidence` |
+| Buscador decisores Linkedin B2B | `mainDecisionMaker.name`, `.title`, `.email`, `.profileUrl`, y `relevantProfiles` |
 
 ### Paso 2: Crear la campaña
 
@@ -191,7 +226,7 @@ Para añadir una acción a una campaña terminada sin reprocesarla, usa `resume`
 suntropy satvolt catalog ai-agents --format human     # id, nombre y descripción de cada agente
 suntropy satvolt campaigns funnel <campaignId>         # leads que llegaron al último paso: los que pagarán el nuevo
 suntropy satvolt campaigns resume <campaignId> --action AI_AGENT \
-  --config '{"customName":"Web corporativa","agentId":"<id>","outputKey":"web"}'
+  --config '{"customName":"Web corporativa","agentId":"<id>","outputKey":"web","messageTemplate":"Empresa: {{lead.commercialName}}\nWeb: {{lead.url}}\nDirección: {{lead.address}}"}'
 ```
 
 `--config` es solo el objeto de configuración del paso (el `configSchema` de `catalog actions`), no `{ action, config }`. Coste ≈ leads que llegaron al último paso × `creditCost` de la acción.
@@ -200,7 +235,8 @@ Si el `agentId` sale de una variable de shell, no lo metas entre comillas simple
 
 ```bash
 cat > agent.json <<EOF
-{ "customName": "Web corporativa", "agentId": "$AGENT_ID", "outputKey": "web" }
+{ "customName": "Web corporativa", "agentId": "$AGENT_ID", "outputKey": "web",
+  "messageTemplate": "Empresa: {{lead.commercialName}}\nWeb: {{lead.url}}\nDirección: {{lead.address}}" }
 EOF
 suntropy satvolt campaigns resume <campaignId> --action AI_AGENT --config @agent.json
 ```
