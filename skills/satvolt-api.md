@@ -42,11 +42,12 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 | POST | `/campaigns/excel/preview` | multipart `file` (+ `?sampleSize`) → `{ headers, sampleRows, totalRows }` |
 | POST | `/campaigns/excel/geocode-test` | multipart `file` + `payload` JSON `{ columns[], sampleSize?, region? }` → `{ testId, results[{row, query, success, coordinates, formattedAddress, error}] }` |
 | POST | `/campaigns/from-excel` | multipart `file` + `payload` JSON `{ name, columnMapping{commercialName{column\|literal}, coordinates?, address?[], phone?, url?, email?, country?, googlePlacesType?}, geocoding?{enabled, columns[]}, templateId? \| fromCampaignId? \| steps?, maxLeads?, region?, description?, start? }` → como `POST /campaigns` más `leads`. Origen `excel`: entra por IMPORT_LEADS (+ GEOCODE_ADDRESS si geocodifica) y no admite `extend` |
-| GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch` y `configuration` |
+| GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch`, `configuration`, `creditLimit`, `credits` `{limit, spent, reserved, remaining, reached}` y, si está pausada, `pauseReason` (`credit_limit` \| `manual`) |
+| PUT | `/campaigns/:id/credit-limit` | `{ "creditLimit": 150000 }` o `{ "creditLimit": null }` para quitar el techo (entero > 0 o `null`; si no, `400 VALIDATION_ERROR`). Vale en cualquier estado. Devuelve `{ campaignId, creditLimit, credits }`. Subirlo NO reanuda: hay que llamar después a `/unpause` |
 | DELETE | `/campaigns/:id` | Borra la campaña con sectores, leads, ejecuciones, configuración y jobs |
 | POST | `/campaigns/:id/start` | Arranca una campaña `queued` (`409 INVALID_CAMPAIGN_STATE` si no lo está) |
 | POST | `/campaigns/:id/pause` | Pausa una campaña en marcha: retira el trabajo en cola y lo que está en vuelo termina sin encolar más, así que deja de gastar créditos. Solo desde `inProgress`, `sectorized`, `leadsFound` o `analyzed` (si no, `409 INVALID_CAMPAIGN_STATE`). Devuelve `{ campaignId, removedJobs, paused: true }` |
-| POST | `/campaigns/:id/unpause` | Reanuda una campaña `paused` por donde iba: encola el siguiente paso pendiente de cada lead sin repetir ni volver a cobrar los ya ejecutados. Devuelve `{ campaignId, dispatchedLeads, paused: false }`. No confundir con `/resume`, que añade un paso nuevo |
+| POST | `/campaigns/:id/unpause` | Reanuda una campaña `paused` por donde iba: encola el siguiente paso pendiente de cada lead sin repetir ni volver a cobrar los ya ejecutados. Devuelve `{ campaignId, dispatchedLeads, paused: false }`. `409 CREDIT_LIMIT_REACHED` si la campaña sigue en su techo de créditos. No confundir con `/resume`, que añade un paso nuevo |
 | POST | `/campaigns/:id/cancel` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola. Conserva los leads y los datos ya obtenidos (siguen consultables y exportables; lo ejecutado ya está cobrado). Devuelve `{ campaignId, removedJobs, canceled: true }`. Para vaciarla, `/reset` |
 | POST | `/campaigns/:id/reset` | `?start=true` para relanzarla. Borra leads y resultados |
 | POST | `/campaigns/:id/extend` | `{ "maxLeads": 500 }` o `{ "maxLeads": null }` para quitar el límite |
@@ -117,6 +118,7 @@ POST /campaigns
   - `steps` son solo los pasos LEAD `[{action, config?, uid?, disable?}]`. Se validan contra `configSchema`, se rellenan los `default` y se añaden las dependencias que falten, con aviso.
   - `businessGroups` es `["businesses"]` por defecto si no hay base.
   - Opcionales: `searchQuery`, `description`, `inputAddress` y `region`.
+  - `creditLimit`: techo de gasto de la campaña en créditos. Si no se manda, **100.000**; `null` la deja sin techo. Igual en `POST /campaigns/from-excel`.
 - **Respuesta:** `{ campaign, area, configuration, estimatedCreditsPerLead, basedOn, started, warnings }`.
 - **Errores:** `422 VALIDATION_ERROR` trae en `details[]` el `index`, `uid`, `action`, `field` y `message` de cada problema. Otros: `400 INVALID_AREA`, `404 TEMPLATE_NOT_FOUND`, `400 UNSUPPORTED_SOURCE`.
 
@@ -130,7 +132,18 @@ POST /campaigns
   - `409 CAMPAIGN_NOT_STARTED`: todavía está `queued`.
   - `400 UNSUPPORTED_SOURCE`: no es de Maps.
   - `400 VALIDATION_ERROR`: el límite no es mayor que los leads actuales.
+  - `409 CREDIT_LIMIT_REACHED`: la campaña ya está en su techo de créditos; súbelo con `PUT /campaigns/:id/credit-limit`.
 - **Cuándo tiene sentido:** en `GET /campaigns/:id`, `sectorSearch` da `{ total, exhausted, incomplete, queued, unknown }`. Con `incomplete + unknown > 0` todavía puede aparecer algo.
+
+### Techo de créditos (`creditLimit`)
+
+Toda campaña creada desde la API nace con `creditLimit: 100000` salvo que se mande otro valor o `null`. Al alcanzarlo, la campaña se pausa sola: no ejecuta el paso que se pasaría del techo (no se registra ejecución, así que no se cobra), retira lo que quedaba en cola y queda `paused` con `pauseReason: credit_limit`.
+
+- **Contra qué se compara:** `credits.spent` (lo cobrado) + `credits.reserved` (los pasos asíncronos ya lanzados que siguen esperando su webhook; se cobran al volver). `credits.remaining` es lo que queda.
+- **Techo blando:** los pasos que ya estaban en ejecución terminan y se cobran, igual que el barrido de Maps que ya estaba corriendo, así que el total puede acabar algo por encima.
+- **Mientras esté alcanzado:** `/unpause`, `/extend` y `/campaigns/:id/leads/:leadId/steps/:step/run` devuelven `409 CREDIT_LIMIT_REACHED` con `details: { creditLimit, spent, reserved }`.
+- **Para seguir:** `PUT /campaigns/:id/credit-limit` con un techo mayor (o `null`) y después `POST /campaigns/:id/unpause`.
+- Las campañas anteriores a esta función tienen `creditLimit: null` (sin techo) hasta que se les ponga uno.
 
 ## Consumo de la cuenta
 
@@ -297,6 +310,10 @@ curl -s -H "$H" "$API/campaigns/$ID/usage" | jq '.data | {totalCredits, avgCredi
 curl -s -H "$H" "$API/usage" | jq '.data | {month, credits, previous, byCampaign: .byCampaign[:5]}'
 # 5b. Parar el gasto de una campaña en marcha y reanudarla después (cancel es definitivo)
 curl -s -X POST "$API/campaigns/$ID/pause" -H "$H"
+curl -s -X POST "$API/campaigns/$ID/unpause" -H "$H"
+# 5c. Techo de créditos: ver cuánto queda, subirlo y reanudar
+curl -s -H "$H" "$API/campaigns/$ID" | jq '.data | {creditLimit, credits, pauseReason}'
+curl -s -X PUT "$API/campaigns/$ID/credit-limit" -H "$H" -H "$J" -d '{"creditLimit":150000}'
 curl -s -X POST "$API/campaigns/$ID/unpause" -H "$H"
 # 6. Tabla de exportación: rutas del paso QUALIFY y del agente de CIF, tabla, columna en 2ª posición y CSV
 curl -s -H "$H" "$API/campaigns/$ID/fields?step=QUALIFY" | jq '.data.steps[0].fields[] | {path, type}'

@@ -2,6 +2,8 @@ Crea, configura y explota una campaña de Satvolt (captación de leads B2B desde
 
 Cada acción del pipeline gasta créditos por lead. Habla siempre en créditos, nunca en euros: el precio del crédito depende de cada cliente y no lo conoces. Antes de arrancar o reanudar una campaña, enseña al usuario el coste estimado y pide confirmación.
 
+Toda campaña nueva nace con un techo de **100.000 créditos**: al alcanzarlo se pausa sola en vez de seguir gastando. Dilo al crearla y al ampliarla, y mira `campaigns get` → `credits` para saber cuánto queda. Ver [Techo de créditos](#techo-de-créditos-de-la-campaña).
+
 ## Parámetros de entrada
 
 | Parámetro | Obligatorio | Default |
@@ -10,6 +12,7 @@ Cada acción del pipeline gasta créditos por lead. Habla siempre en créditos, 
 | Área: centro + radio, rectángulo o polígono | Sí | - |
 | Consulta de texto (en vez de búsqueda por cercanía) | No | - |
 | Máximo de leads | No | sin límite |
+| Techo de gasto en créditos | No | 100.000 créditos |
 | Grupos de negocio | No | `businesses` |
 | Plantilla o campaña base (pasos, grupos, límite) | No | - |
 | Pasos del pipeline (acciones y su config) | No | los de la base; sin base, ninguno (solo descubre leads) |
@@ -263,7 +266,28 @@ suntropy satvolt campaigns extend <campaignId> --no-limit     # barre entero cad
 
 - El nuevo límite tiene que ser mayor que los leads actuales. La campaña no puede estar en ejecución (409 `CAMPAIGN_RUNNING`) ni sin arrancar (409 `CAMPAIGN_NOT_STARTED`).
 - Coste ≈ leads nuevos × créditos por lead de la campaña (míralo con `campaigns usage`). Enséñaselo al usuario y pide confirmación antes de ampliar.
+- Comprueba que el techo de créditos da para la ampliación (`campaigns get` → `credits.remaining`): si ya está alcanzado, `extend` responde 409 `CREDIT_LIMIT_REACHED`, y si se queda corto la campaña se pausará sola a mitad.
 - En las campañas creadas antes de esta función, los sectores salen como `unknown` y cuentan como pendientes: se repiten sus primeras peticiones a Places, pero los duplicados no se crean.
+
+### Techo de créditos de la campaña
+
+Cada campaña tiene un techo de gasto en créditos. Al crearla vale **100.000 créditos** si no se dice otra cosa; al alcanzarlo la campaña se **pausa sola** en vez de seguir gastando, y queda como cualquier otra pausa: lo hecho se conserva y se reanuda cuando se sube el techo.
+
+```bash
+suntropy satvolt campaigns get <campaignId> --format human    # credits: gastado, reservado, techo y lo que queda
+suntropy satvolt campaigns credit-limit <campaignId> 150000   # subir (o bajar) el techo
+suntropy satvolt campaigns credit-limit <campaignId> --off --yes   # quitarlo: solo si el usuario lo pide explícitamente
+suntropy satvolt campaigns create ... --credit-limit 30000     # otro techo al crear
+suntropy satvolt campaigns create ... --no-credit-limit        # crear sin techo
+```
+
+- **Qué cuenta:** los créditos ya cobrados (`credits.spent`) **más los reservados** (`credits.reserved`), que son los de los pasos asíncronos que ya se lanzaron y todavía esperan su webhook. Un paso asíncrono se cobra cuando vuelve, así que sin esa reserva el techo se saltaría por miles de créditos ya comprometidos.
+- **Es un techo blando:** los pasos que ya estaban ejecutándose terminan y se cobran, así que el total puede quedar un poco por encima. Lo que no ocurre es que siga lanzando trabajo nuevo.
+- **Subir el techo no reanuda:** después hay que hacer `campaigns unpause <id>`.
+- Mientras el techo esté alcanzado, `unpause`, `extend` y `leads run-step` responden 409 `CREDIT_LIMIT_REACHED` con `details` (techo, gastado y reservado).
+- Una campaña pausada por el techo se distingue en `campaigns get`: `pauseReason: credit_limit` (una pausa a mano es `manual`).
+- Quitar el techo (`--off --yes`) deja a la campaña gastar sin tope: no lo hagas por iniciativa propia; pide confirmación explícita al usuario y ofrécele antes subirlo a una cifra concreta.
+- Las campañas creadas antes de esta función no tienen techo (`creditLimit: null`) hasta que se les ponga uno.
 
 ### Pausar, reanudar y cancelar una campaña en marcha
 
@@ -277,6 +301,7 @@ suntropy satvolt campaigns cancel <campaignId> --yes   # DEFINITIVO; conserva le
 - `unpause` no es `resume`: `resume` añade un paso NUEVO a una campaña terminada.
 - Una campaña cancelada no se puede reanudar ni arrancar; lo único que queda es `reset` (que borra los leads) o crear otra. Lo ya ejecutado está cobrado.
 - Estados: `pause` solo desde una campaña en marcha; `unpause` solo desde `paused`; `cancel` desde en marcha, `paused` o `queued`. Si no, 409 `INVALID_CAMPAIGN_STATE`.
+- Una campaña se puede haber pausado sola al llegar a su techo de créditos (`pauseReason: credit_limit`): antes de reanudarla hay que subirlo, o `unpause` responde 409 `CREDIT_LIMIT_REACHED`. Ver la sección anterior.
 
 ### Consumo, reinicio y borrado
 
@@ -347,5 +372,6 @@ Los errores salen por stderr como `{ error, status, message, details }`:
 | 400 `INVALID_EXCEL` | el Excel no tiene filas, o falta el nombre comercial o la forma de localizar cada fila (coordenadas o columnas a geocodificar). |
 | 400 `UNSUPPORTED_SOURCE` | `extend` sobre una campaña de Excel o copiada de otra: sus leads no se amplían. |
 | 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola (hay que hacer `reset` antes); `pause` sobre una que no está en marcha; `unpause` sobre una que no está `paused`. |
+| 409 `CREDIT_LIMIT_REACHED` | la campaña llegó a su techo de créditos: `unpause`, `extend` y `leads run-step` no se ejecutan hasta subirlo o quitarlo con `campaigns credit-limit`. `details` trae el techo, lo gastado y lo reservado. |
 | 409 `PENDING_STEP`, `STEP_NOT_RUNNABLE` | no se puede reanudar; `message` explica por qué. |
 | 401 `TOKEN_EXPIRED` | renueva el token con `suntropy auth refresh`. |

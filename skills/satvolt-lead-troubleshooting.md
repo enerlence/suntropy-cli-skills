@@ -9,6 +9,8 @@ Diagnostica y corrige pasos del pipeline que fallan o se quedan colgados en una 
 
 Relanzar pasos gasta los créditos de ese paso por lead (y con `--continue`, también los de los pasos posteriores). Una ejecución que vuelve a fallar no cobra. Enséñale al usuario cuántos leads y cuántos créditos implica, y pide confirmación.
 
+Si la campaña está `paused`, nada de lo que relances se ejecutará: comprueba antes en `campaigns get` si la pausa es manual o de su techo de créditos (`pauseReason`).
+
 ## Paso 1: Localizar el fallo
 
 ```bash
@@ -31,6 +33,8 @@ suntropy satvolt leads get <id> <leadId> --format json
 
 | Síntoma (logs o `stateError`) | Causa | Solución |
 |---|---|---|
+| La campaña se pausó sola y dejó de avanzar (`state: paused`, `pauseReason: credit_limit`) | Llegó a su techo de créditos: no ejecuta nada más para no seguir gastando | Mira `campaigns get <id>` → `credits`; si procede, sube el techo con `campaigns credit-limit <id> <créditos>` (pídele confirmación al usuario) y luego `campaigns unpause <id>` |
+| `leads run-step` responde 409 `CREDIT_LIMIT_REACHED` | La campaña está en su techo de créditos, incluida la parte reservada por pasos asíncronos aún en vuelo | Sube el techo o espera: al no ejecutarse, tampoco se cobra |
 | FIND_ROOFTOP: `ECONNREFUSED ...:8090` | En local, falta el servicio `sharing` de Suntropy, donde se suben las imágenes | Levántalo y relanza el paso |
 | ESTIMATE_CONSUMPTION: `ECONNREFUSED ...:8765` o `Consumption model returned 5xx` | Modelo de consumo caído | Levántalo y relanza el paso |
 | ESTIMATE_CONSUMPTION: `Catastral parcel with reference is required` | El lead no tiene parcela (FIND_ROOFTOP falló o no la encontró) | Arregla antes FIND_ROOFTOP en ese lead |
