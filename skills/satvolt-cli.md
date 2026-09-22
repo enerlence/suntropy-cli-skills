@@ -41,8 +41,9 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
   - Cada acción cobra un precio fijo por lead (`creditCost` en `catalog actions` o `steps list`). Todos los agentes de AI_AGENT cuestan lo mismo.
   - Las ejecuciones fallidas o saltadas (`skipped`) no cobran.
   - `estimatedCreditsPerLead` al crear es el máximo, como si todos los leads pasaran todos los pasos; los filtros (QUALIFY) lo reducen. El consumo real por lead lo da `campaigns usage` (`avgCreditsPerLead`); para estimar una campaña nueva, usa el de una campaña anterior con la misma configuración.
+  - **Techo por campaña:** toda campaña nueva se limita a 100.000 créditos y se pausa sola al llegar (`pauseReason: credit_limit`). Se consulta en `campaigns get` (`credits`) y se cambia con `campaigns credit-limit`. Cuenta lo cobrado más lo reservado por pasos asíncronos en vuelo.
 - **Estados:** consulta `catalog states`.
-  - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads.
+  - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads. La pausa puede ser manual o del techo de créditos (`pauseReason`).
   - Lead: `pending` → estados intermedios (`rooftopFound`, `qualified`, `consumptionEstimated`…) → `completed`, `unQualified` o `failed`.
 - **Área:** círculo de 100 m a 50 km, rectángulo o polígono. El polígono se busca en su rectángulo envolvente y devuelve un aviso.
 
@@ -76,8 +77,8 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | Comando | Qué hace |
 |---|---|
 | `campaigns list [--state a,b] [--search t] [--source maps\|excel\|campaign] [--limit/--offset]` | Lista, las más recientes primero |
-| `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch` y configuración |
-| `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca) |
+| `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch`, créditos frente al techo (`credits`, `creditLimit`, `pauseReason`) y configuración |
+| `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca). `--credit-limit <n>` / `--no-credit-limit` cambian su techo de gasto (por defecto 100.000 créditos) |
 | `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create` |
 | `campaigns excel-preview <file> [--sample n]` | Cabeceras y primeras filas de un Excel (primera hoja, cabeceras en la fila 1), para decidir el mapeo |
 | `campaigns excel-geocode-test <file> --columns h1,h2 [--sample n] [--region t]` | Geocodifica las primeras filas con esas columnas: comprueba que las direcciones resuelven antes de crear (una petición a Google por fila) |
@@ -87,6 +88,7 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `campaigns funnel <id>` | Por paso (`steps[]` con `uid`, `action`, `name`, `reached`, `success`, `failure`, `skipped`, `processing`, `pending`), más `leadStates` |
 | `campaigns pause <id>` | Pausa una campaña en marcha: retira lo pendiente, lo que está en vuelo termina sin encolar más y deja de gastar |
 | `campaigns unpause <id>` | Reanuda una campaña `paused` por donde iba, sin repetir ni volver a cobrar pasos ya ejecutados |
+| `campaigns credit-limit <id> <créditos> \| --off --yes` | Fija o quita el techo de gasto de la campaña. Subirlo no reanuda: después, `unpause` |
 | `campaigns cancel <id> --yes` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola; conserva leads y datos (exportables) |
 | `campaigns usage <id> [--by-lead]` | Créditos cobrados por la campaña (regla de la pestaña Usage; no cuenta la búsqueda en Maps) |
 | `usage [--month YYYY-MM]` | Créditos gastados por toda la cuenta en un mes (por defecto el actual): total, mes anterior, por campaña y por paso. Incluye la búsqueda en Maps, así que no tiene por qué cuadrar con `campaigns usage`. Es `satvolt usage`, no `campaigns usage` |
