@@ -142,7 +142,7 @@ suntropy satvolt campaigns extend <id> --max-leads 100
 ```
 
 - **Qué hace:** solo busca en los sectores pendientes y solo los leads nuevos pasan por el pipeline. En modo `sectors`, esos sectores esperan su turno y avanzan de `sectorsInFlight` en `sectorsInFlight`.
-- **Qué se repite:** las primeras peticiones a Places de los sectores pendientes (unos 0,025 $ por petición). En campañas antiguas los sectores salen como `unknown` y se buscan todos una vez.
+- **Qué se repite:** las primeras peticiones a Places de los sectores pendientes, que se cobran en créditos como el resto del barrido. En campañas antiguas los sectores salen como `unknown` y se buscan todos una vez.
 
 Cuando termine, repite el paso 4 solo sobre los leads nuevos: compara la tasa de cualificación, los CIF, LinkedIn y decisores y los créditos por lead. En Huévar la primera ampliación salió mejor que la sonda (34 % frente a 24 % de cualificación) porque se acercó al centro.
 
