@@ -61,7 +61,8 @@ suntropy satvolt campaigns create --name "Greenvolt Sonda - Huévar" \
 ```
 
 - **Qué comprobar en la respuesta:** `basedOn`, que los pasos y uids son los de la base, `warnings` y `estimatedCreditsPerLead`. La campaña queda en `queued`.
-- **Sesgo de la muestra:** el área se divide en sectores de 1 km que se buscan de norte a sur, y con `--max-leads` la búsqueda se corta al llenarse. La sonda sale de la franja norte del área, no de toda. Avísalo al usuario. Si lo que interesa es el centro, haz la sonda con un radio pequeño alrededor del punto de interés.
+- **Sesgo de la muestra:** el área se divide en sectores de 1 km y con `--max-leads` la búsqueda se corta al llenarse. Las campañas nuevas van por sectores (`executionMode: sectors`), del centro del área hacia fuera, así que la sonda sale del centro, no de toda el área. Avísalo al usuario. En barrido completo (`--execution-mode full`) los sectores se buscan de norte a sur y la sonda sale de la franja norte.
+- **Sonda por objetivo:** si lo que se quiere validar son leads terminados, `--limit completedLeads=15` cierra la campaña al llegar a 15 leads completados, en vez de contar leads encontrados como `--max-leads`. Ver *Objetivos* en `satvolt-campaign`.
 
 ## Paso 3: Arrancar y seguir
 
@@ -73,7 +74,8 @@ suntropy satvolt campaigns funnel <id> --format human
 
 - **`logs --follow`** termina solo cuando la campaña pasa a `completed`, `failed` o `canceled`. En un agente, sondea `funnel` o `get` cada 1–3 minutos.
 - **Si un paso acumula `failure`:** para y sigue `satvolt-lead-troubleshooting`. Es típico FIND_ROOFTOP con `ECONNREFUSED` porque falta un servicio en local.
-- **Pasos asíncronos** (QUALIFY, AI_AGENT): salen como `processing` hasta que llega su webhook. Si alguno se queda en `processing` durante horas, apúntalo: no bloquea al resto.
+- **Pasos asíncronos** (QUALIFY, AI_AGENT): salen como `processing` hasta que llega su webhook. Si no llega, caducan a las 2 h y el lead pasa a `failed` sin cobrar el paso; apúntalo y relánzalo luego. En modo `sectors`, un lead así retiene su sector hasta que caduca.
+- **Primer sector como canario:** en modo `sectors`, revisa los leads del primer sector en cuanto terminen; si un agente está mal configurado, se ve ahí antes de que la campaña avance.
 
 ## Paso 4: Validar la sonda
 
@@ -139,7 +141,7 @@ suntropy satvolt campaigns get <id>            # sectorSearch: incomplete + unkn
 suntropy satvolt campaigns extend <id> --max-leads 100
 ```
 
-- **Qué hace:** solo busca en los sectores pendientes y solo los leads nuevos pasan por el pipeline.
+- **Qué hace:** solo busca en los sectores pendientes y solo los leads nuevos pasan por el pipeline. En modo `sectors`, esos sectores esperan su turno y avanzan de `sectorsInFlight` en `sectorsInFlight`.
 - **Qué se repite:** las primeras peticiones a Places de los sectores pendientes (unos 0,025 $ por petición). En campañas antiguas los sectores salen como `unknown` y se buscan todos una vez.
 
 Cuando termine, repite el paso 4 solo sobre los leads nuevos: compara la tasa de cualificación, los CIF, LinkedIn y decisores y los créditos por lead. En Huévar la primera ampliación salió mejor que la sonda (34 % frente a 24 % de cualificación) porque se acercó al centro.
@@ -153,6 +155,8 @@ suntropy satvolt campaigns extend <id> --no-limit
 ```
 
 Sin límite, cada sector se barre entero, con hasta 40 peticiones a Places por sector si es denso. Al terminar, `sectorSearch.exhausted = total`: la zona está agotada y otra ampliación no encontrará nada.
+
+Para una ampliación grande, un objetivo (`campaigns limits <id> completedLeads=500` o `annualKwh=…`) cierra la campaña al llegar a la meta sin tener que calcular cuántos leads encontrar. Si el usuario quiere el área entera cuanto antes, `campaigns full-sweep <id> --yes` pasa a barrido completo: paga ya la búsqueda de los sectores que esperan (`sectorProgress.waiting`) y pone todos sus leads en vuelo; pide confirmación antes.
 
 ## Paso 7: Cierre
 
