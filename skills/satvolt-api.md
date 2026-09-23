@@ -87,7 +87,7 @@ curl -s -H "$H" "$API/campaigns/$ID/funnel" | jq '.data.steps[] | {name, reached
 
 ### Caducidad de los pasos asíncronos
 
-Un paso asíncrono que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY y a las 24 h en el resto. Se cambia por paso con `asyncTimeoutMinutes` en su `config`. Al caducar, el lead pasa a `failed` y el paso no se cobra. Si el webhook llega después, el resultado se guarda, pero el lead no cambia de estado ni sigue la cadena.
+Un paso asíncrono que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY y a las 24 h en el resto; en modo `sectors`, ninguno espera más de 2 h, porque un sector no deja hueco al siguiente hasta que terminan sus leads. Se cambia por paso con `asyncTimeoutMinutes` en su `config`. Al caducar, el lead pasa a `failed` y el paso no se cobra. Si el webhook llega después, el resultado se guarda, pero el lead no cambia de estado ni sigue la cadena.
 
 ### Mensaje de un AI_AGENT (`messageTemplate`)
 

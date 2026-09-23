@@ -49,7 +49,7 @@ suntropy satvolt leads get <id> <leadId> --format json
 | Paso con config inválida (`VALIDATION_ERROR` al editar) | Falta un campo obligatorio de `configSchema` | Corrígelo con `steps set <id> <uid> --config ...` |
 | Resultados raros en todos los leads (p. ej. consumo con confianza "baja") | Configuración mejorable, no un fallo: `cnaeTemplate` vacío, orden de pasos… | Ver `satvolt-probe-to-full-campaign`, paso 5 |
 
-**Caducidad de los pasos asíncronos.** Un paso asíncrono que no recibe su webhook caduca a las 2 h en AI_AGENT y QUALIFY y a las 24 h en el resto. Se cambia por paso con `asyncTimeoutMinutes` en su `config` (`steps set <id> <uid> --config '{"asyncTimeoutMinutes":240}'`). Al caducar, el lead pasa a `failed` y el paso no se cobra. Si el webhook llega después, el resultado se guarda, pero el lead no cambia de estado ni sigue la cadena: relanza el paso o sigue con `--continue` si hace falta que avance.
+**Caducidad de los pasos asíncronos.** Un paso asíncrono que no recibe su webhook caduca a las 2 h en AI_AGENT y QUALIFY y a las 24 h en el resto (en modo `sectors`, 2 h todos). Se cambia por paso con `asyncTimeoutMinutes` en su `config` (`steps set <id> <uid> --config '{"asyncTimeoutMinutes":240}'`). Al caducar, el lead pasa a `failed` y el paso no se cobra. Si el webhook llega después, el resultado se guarda, pero el lead no cambia de estado ni sigue la cadena: relanza el paso o sigue con `--continue` si hace falta que avance.
 
 Si trabajas contra el backend local, comprueba los servicios que usa el pipeline:
 

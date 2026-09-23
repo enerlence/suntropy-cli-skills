@@ -160,7 +160,7 @@ suntropy satvolt campaigns get <campaignId> --format human              # "Secto
 
 En modo `sectors`, `campaigns get` da `sectorProgress`: sectores terminados, en curso y esperando turno. Revisa los leads del primer sector antes de que avance mucho: hace de canario, y un agente mal configurado se ve en unos pocos leads en lugar de en cientos.
 
-Un paso asíncrono (QUALIFY, AI_AGENT, CUSTOM_WEBHOOK…) que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY, a las 24 h en el resto, o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` y el paso no se cobra. Ver `satvolt-lead-troubleshooting`.
+Un paso asíncrono (QUALIFY, AI_AGENT, CUSTOM_WEBHOOK…) que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY, a las 24 h en el resto (2 h todos en modo `sectors`), o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` y el paso no se cobra. Ver `satvolt-lead-troubleshooting`.
 
 **Ejecutar ≠ acertar.** Un agente puede terminar sin error respondiendo que no encontró
 nada: el paso cuenta como `success` y la columna se queda vacía. Para medirlo, cada paso
