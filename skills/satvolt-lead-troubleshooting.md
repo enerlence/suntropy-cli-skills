@@ -9,7 +9,7 @@ Diagnostica y corrige pasos del pipeline que fallan o se quedan colgados en una 
 
 Relanzar pasos gasta los créditos de ese paso por lead (y con `--continue`, también los de los pasos posteriores). Una ejecución que vuelve a fallar no cobra. Enséñale al usuario cuántos leads y cuántos créditos implica, y pide confirmación.
 
-Si la campaña está `paused`, nada de lo que relances se ejecutará: comprueba antes en `campaigns get` si la pausa es manual o de su techo de créditos (`pauseReason`).
+Si la campaña está `paused`, nada de lo que relances se ejecutará: comprueba antes en `campaigns get` si la pausa es manual, de su techo de créditos o de un objetivo alcanzado (`pauseReason`: `manual`, `credit_limit`, `limit_reached`).
 
 ## Paso 1: Localizar el fallo
 
@@ -20,7 +20,8 @@ suntropy satvolt campaigns logs <id> --level error --limit 50 --format human
 ```
 
 - **`failure` > 0 en un paso:** saca sus leads con `leads list <id> --step <uid|ACCIÓN> --step-status failure`.
-- **`processing` que no baja:** son pasos asíncronos esperando su webhook. Lístalos con `--step-status processing`.
+- **`processing` que no baja:** son pasos asíncronos esperando su webhook. Lístalos con `--step-status processing`. No se quedan así para siempre: caducan (ver abajo).
+- **Campaña en modo `sectors` que no avanza:** mira `sectorProgress` en `campaigns get`. Un sector no da paso al siguiente hasta que terminan todos sus leads, así que un paso asíncrono colgado retiene su sector hasta que caduca.
 - **Leads con `state: failed` y `stateError`:** `leads list <id> --state failed --format human` muestra el motivo.
 
 Detalle de un lead: estado de cada paso, historial con `errorMessage` y claves de fullData:
@@ -38,13 +39,17 @@ suntropy satvolt leads get <id> <leadId> --format json
 | FIND_ROOFTOP: `ECONNREFUSED ...:8090` | En local, falta el servicio `sharing` de Suntropy, donde se suben las imágenes | Levántalo y relanza el paso |
 | ESTIMATE_CONSUMPTION: `ECONNREFUSED ...:8765` o `Consumption model returned 5xx` | Modelo de consumo caído | Levántalo y relanza el paso |
 | ESTIMATE_CONSUMPTION: `Catastral parcel with reference is required` | El lead no tiene parcela (FIND_ROOFTOP falló o no la encontró) | Arregla antes FIND_ROOFTOP en ese lead |
-| QUALIFY o AI_AGENT se quedan en `processing` | El agente no llamó al webhook (Suntropy AI o Devic caídos, o no alcanzan la URL del backend, o el hilo terminó en `failed` sin guardar resultado) | Comprueba los servicios; cuando lleguen, relanza el paso. Si el hilo falló, el paso no se cierra solo y `leads run-step` responde `STEP_IN_PROGRESS`: avisa a soporte para liberarlo |
+| La campaña se cerró o se pausó sola con leads por buscar (`pauseReason: limit_reached`, o sectores `skipped` en `sectorProgress`) | Alcanzó un objetivo (`limits`): en modo `sectors` deja de admitir sectores y se cierra; en `full` se pausa | No es un fallo. Si el usuario quiere más, `campaigns limits <id> key=<valor mayor>` (o `key=off`) y `campaigns unpause <id>` |
+| QUALIFY o AI_AGENT se quedan en `processing` | El agente no llamó al webhook (Suntropy AI o Devic caídos, o no alcanzan la URL del backend, o el hilo terminó en `failed` sin guardar resultado) | Comprueba los servicios. El paso caduca solo (ver abajo) y el lead pasa a `failed`; entonces relánzalo con `leads run-step` |
+| Lead `failed` en un paso asíncrono sin error del servicio | El paso caducó sin recibir su webhook | Relánzalo cuando el servicio responda; si el agente tarda más de lo normal, sube `asyncTimeoutMinutes` en la `config` del paso |
 | AI_AGENT `success` pero vacío en todos los leads, con notas tipo "entrada inválida" o "falta companyName" | El paso no tiene `messageTemplate` o no nombra el lead (`{{lead.commercialName}}`, `{{lead.url}}`…): el agente no sabe qué empresa buscar | `steps set <id> <uid> --config` con la plantilla (skill `satvolt-campaign`, paso 1) y relanza con `leads run-step … --continue` |
 | Decisores de otras empresas en los leads | El paso de decisores corrió sin URL de LinkedIn de empresa | Plantilla con `{{fullData.<alias>.response.linkedinUrl}}` y `skipIfEmpty` sobre esa ruta |
 | AI_AGENT `skipped` en muchos leads | `skipIfEmpty` apunta a un dato vacío (p. ej. LinkedIn de empresa no encontrado) | No es un error: no se cobra y el lead sigue |
 | El paso sale `success` pero la columna llega vacía | El agente terminó sin error respondiendo que no encontró el dato | Mídelo con `campaigns funnel <id> --mode success`; define `successIf` en el paso y, si no es determinista, `maxRetries` |
 | Paso con config inválida (`VALIDATION_ERROR` al editar) | Falta un campo obligatorio de `configSchema` | Corrígelo con `steps set <id> <uid> --config ...` |
 | Resultados raros en todos los leads (p. ej. consumo con confianza "baja") | Configuración mejorable, no un fallo: `cnaeTemplate` vacío, orden de pasos… | Ver `satvolt-probe-to-full-campaign`, paso 5 |
+
+**Caducidad de los pasos asíncronos.** Un paso asíncrono que no recibe su webhook caduca a las 2 h en AI_AGENT y QUALIFY y a las 24 h en el resto (en modo `sectors`, 2 h todos). Se cambia por paso con `asyncTimeoutMinutes` en su `config` (`steps set <id> <uid> --config '{"asyncTimeoutMinutes":240}'`). Al caducar, el lead pasa a `failed` y el paso no se cobra. Si el webhook llega después, el resultado se guarda, pero el lead no cambia de estado ni sigue la cadena: relanza el paso o sigue con `--continue` si hace falta que avance.
 
 Si trabajas contra el backend local, comprueba los servicios que usa el pipeline:
 
@@ -89,7 +94,7 @@ suntropy satvolt campaigns logs <id> --since <lastTs> --level error
 ```
 
 - **Pasos síncronos** (FIND_ROOFTOP, ESTIMATE_CONSUMPTION): el resultado está en segundos.
-- **Pasos asíncronos** (QUALIFY, AI_AGENT): tardan lo que el agente, de uno a varios minutos.
+- **Pasos asíncronos** (QUALIFY, AI_AGENT): tardan lo que el agente, de uno a varios minutos; sin webhook, caducan a las 2 h.
 - **Cierre de la campaña:** vuelve a `completed` cuando todos sus leads llegan a un estado final.
 
 Resume al usuario: causa, leads afectados, qué se relanzó y con qué modo, créditos consumidos (`campaigns usage <id>`) y leads que siguen fallando.

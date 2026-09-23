@@ -16,6 +16,8 @@ suntropy --profile dev satvolt campaigns list
 
 El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. Con `401 TOKEN_EXPIRED` hay que renovar el token.
 
+La entrega por sectores (`--execution-mode`, `--sectors-in-flight`, `campaigns full-sweep`) y los objetivos (`--limit`, `campaigns limits`, `catalog campaign-limits`) necesitan la CLI 0.16.0 o posterior.
+
 ## Opciones globales y formato
 
 | Opción | Uso |
@@ -27,7 +29,7 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
 
 - **Argumentos JSON** (`--steps`, `--config`, `--data`, `--columns`, `--polygon`): aceptan JSON en línea, `@fichero.json` o `-` para leer de stdin.
 - **Errores:** salen por stderr como `{"error":true,"message","status","code","details"}` y el comando termina con código ≠ 0. Decide qué hacer según el `code`, no según el texto.
-- **Permisos:** la CLI puede estar limitada a un nivel (`SUNTROPY_COMMAND_PROFILE`). En `read` no aparecen los comandos que cambian datos. `write` añade `create`, `update`, `patch`, `set`, `add`, `remove`, `start`, `pause`, `unpause`, `cancel`, `resume`, `run`, `run-step`, `extend` y `duplicate`. `delete` añade `delete` y `reset`.
+- **Permisos:** la CLI puede estar limitada a un nivel (`SUNTROPY_COMMAND_PROFILE`). En `read` no aparecen los comandos que cambian datos. `write` añade `create`, `update`, `patch`, `set`, `add`, `remove`, `start`, `pause`, `unpause`, `cancel`, `resume`, `run`, `run-step`, `extend`, `full-sweep`, `limits` (con pares) y `duplicate`. `delete` añade `delete` y `reset`.
 
 ## Conceptos que hay que tener claros
 
@@ -42,8 +44,11 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
   - Las ejecuciones fallidas o saltadas (`skipped`) no cobran.
   - `estimatedCreditsPerLead` al crear es el máximo, como si todos los leads pasaran todos los pasos; los filtros (QUALIFY) lo reducen. El consumo real por lead lo da `campaigns usage` (`avgCreditsPerLead`); para estimar una campaña nueva, usa el de una campaña anterior con la misma configuración.
   - **Techo por campaña:** toda campaña nueva se limita a 100.000 créditos y se pausa sola al llegar (`pauseReason: credit_limit`). Se consulta en `campaigns get` (`credits`) y se cambia con `campaigns credit-limit`. Cuenta lo cobrado más lo reservado por pasos asíncronos en vuelo.
+- **Objetivos:** además del techo, una campaña puede tener objetivos en `limits` (`completedLeads`, `annualKwh`, `roofAreaM2`; la lista la da `catalog campaign-limits` y puede crecer). Solo cuentan los leads `completed`. Al alcanzar uno, en modo `sectors` deja de admitir sectores y se cierra sola; en `full` se pausa (`pauseReason: limit_reached`). Se fijan con `--limit key=valor` al crear o con `campaigns limits`.
+- **Entrega por sectores (`executionMode`):** las campañas nuevas de Maps van en `sectors`: un sector, sus leads terminados, y el siguiente, del centro hacia fuera, con `sectorsInFlight` a la vez (2 de serie, 1–20), y los leads de cada sector en tandas de `leadBatchSize` (25 de serie, 1–500). `full` es el barrido completo de antes: todos los sectores y todos los leads a la vez; lo conservan las campañas anteriores y lo usan siempre las de Excel y las copiadas de otra campaña. Se pasa de `sectors` a `full` con `campaigns full-sweep`; al revés no.
+- **Pasos asíncronos:** si no llega su webhook, caducan a las 2 h (AI_AGENT, QUALIFY) o a las 24 h (el resto; en modo `sectors`, también 2 h), o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` sin cobrar el paso.
 - **Estados:** consulta `catalog states`.
-  - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads. La pausa puede ser manual o del techo de créditos (`pauseReason`).
+  - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads. La pausa puede ser manual, del techo de créditos o de un objetivo alcanzado (`pauseReason`: `manual`, `credit_limit`, `limit_reached`).
   - Lead: `pending` → estados intermedios (`rooftopFound`, `qualified`, `consumptionEstimated`…) → `completed`, `unQualified` o `failed`.
 - **Área:** círculo de 100 m a 50 km, rectángulo o polígono. El polígono se busca en su rectángulo envolvente y devuelve un aviso.
 
@@ -55,19 +60,20 @@ El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. C
 | `catalog ai-agents` | Agentes válidos para `AI_AGENT.config.agentId` |
 | `catalog business-groups` | Grupos de negocio para `--business-groups` (`businesses` = solo negocios) |
 | `catalog states` | Estados de campaña y de lead |
+| `catalog campaign-limits` | Métricas que admiten objetivo: `key`, `unit`, `description`, `integer` |
 
 ## Plantillas (`templates`)
 
-Una plantilla guarda todo lo que define una campaña salvo el nombre y el área: los pasos con sus uids, los grupos de negocio, la descripción de la configuración, la consulta de texto y el límite de leads. Se referencian por id o por nombre exacto.
+Una plantilla guarda todo lo que define una campaña salvo el nombre y el área: los pasos con sus uids, los grupos de negocio, la descripción de la configuración, la consulta de texto, el límite de leads, el modo de ejecución (`executionMode`, `sectorsInFlight`) y los objetivos (`limits`). La campaña creada desde ella los hereda; lo que pases en `campaigns create` manda. No guarda el techo de créditos. Se referencian por id o por nombre exacto.
 
 | Comando | Qué hace |
 |---|---|
 | `templates list [--search t]` | Lista las plantillas |
 | `templates get <id\|nombre>` | Detalle con pasos y config |
 | `templates create --name N --from-campaign <id> [--description t]` | Guarda como plantilla la configuración de una campaña de Maps |
-| `templates create --name N --steps @steps.json [--business-groups ids] [--max-leads n] [--search-query t] [--configuration-description t]` | Crea una plantilla desde JSON |
+| `templates create --name N --steps @steps.json [--business-groups ids] [--max-leads n] [--search-query t] [--configuration-description t] [--execution-mode sectors\|full] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ...]` | Crea una plantilla desde JSON |
 | `templates update <id\|nombre> --data @t.json` | PUT: la sustituye entera (los pasos son obligatorios) |
-| `templates patch <id\|nombre> [--name] [--description] [--steps @parches] [--business-groups ids] [--max-leads n \| --no-max-leads] [--search-query t]` | Cambios sueltos; los pasos se modifican con parches por uid |
+| `templates patch <id\|nombre> [--name] [--description] [--steps @parches] [--business-groups ids] [--max-leads n \| --no-max-leads] [--search-query t] [--execution-mode m] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ... \| --no-limits]` | Cambios sueltos; los pasos se modifican con parches por uid. `--limit` sustituye todos los objetivos de la plantilla |
 | `templates delete <id\|nombre> --yes` | Borra la plantilla (las campañas creadas desde ella no cambian) |
 
 `TEMPLATE_NAME_TAKEN` (409) significa que ya existe una plantilla con ese nombre.
@@ -77,8 +83,8 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | Comando | Qué hace |
 |---|---|
 | `campaigns list [--state a,b] [--search t] [--source maps\|excel\|campaign] [--limit/--offset]` | Lista, las más recientes primero |
-| `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch`, créditos frente al techo (`credits`, `creditLimit`, `pauseReason`) y configuración |
-| `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca). `--credit-limit <n>` / `--no-credit-limit` cambian su techo de gasto (por defecto 100.000 créditos) |
+| `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch`, `executionMode`, `sectorProgress`, créditos frente al techo (`credits`, `creditLimit`, `pauseReason`), objetivos (`limits`) y configuración. Con `--format human`: "Sector delivery: N of M sectors done · X in progress · Y waiting (K at a time)" y una línea por objetivo ("Goal completedLeads: 120 of 200 leads (60%)") |
+| `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca). `--credit-limit <n>` / `--no-credit-limit` cambian su techo de gasto (por defecto 100.000 créditos); `--limit key=valor` (repetible) fija objetivos; `--execution-mode sectors\|full` y `--sectors-in-flight N` el modo de entrega |
 | `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create` |
 | `campaigns excel-preview <file> [--sample n]` | Cabeceras y primeras filas de un Excel (primera hoja, cabeceras en la fila 1), para decidir el mapeo |
 | `campaigns excel-geocode-test <file> --columns h1,h2 [--sample n] [--region t]` | Geocodifica las primeras filas con esas columnas: comprueba que las direcciones resuelven antes de crear (una petición a Google por fila) |
@@ -89,6 +95,8 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `campaigns pause <id>` | Pausa una campaña en marcha: retira lo pendiente, lo que está en vuelo termina sin encolar más y deja de gastar |
 | `campaigns unpause <id>` | Reanuda una campaña `paused` por donde iba, sin repetir ni volver a cobrar pasos ya ejecutados |
 | `campaigns credit-limit <id> <créditos> \| --off --yes` | Fija o quita el techo de gasto de la campaña. Subirlo no reanuda: después, `unpause` |
+| `campaigns limits <id> [key=valor\|key=off ...]` | Sin pares, muestra los objetivos con lo que llevan; con pares, los fija (`completedLeads=300`) o los quita (`annualKwh=off`). Subir o quitar un objetivo no reanuda: después, `unpause` |
+| `campaigns full-sweep <id> --yes` | Pasa una campaña en `sectors` a barrido completo (irreversible): busca ya todos los sectores que esperaban y pone sus leads en vuelo. Sin `--yes` explica qué hará y sale |
 | `campaigns cancel <id> --yes` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola; conserva leads y datos (exportables) |
 | `campaigns usage <id> [--by-lead]` | Créditos cobrados por la campaña (regla de la pestaña Usage; no cuenta la búsqueda en Maps) |
 | `usage [--month YYYY-MM]` | Créditos gastados por toda la cuenta en un mes (por defecto el actual): total, mes anterior, por campaña y por paso. Incluye la búsqueda en Maps, así que no tiene por qué cuadrar con `campaigns usage`. Es `satvolt usage`, no `campaigns usage` |
@@ -105,6 +113,8 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | Base (opcional, una) | `--template <id\|nombre>` o `--from-campaign <id>`: aporta pasos, grupos, descripción, consulta y límite, y los flags explícitos tienen prioridad |
 | Pipeline | `--steps @steps.json`, `--business-groups ids`, `--description t` |
 | Búsqueda | `--search-query t` (búsqueda por texto en vez de por cercanía), `--max-leads n` |
+| Límites | `--credit-limit n` / `--no-credit-limit`, `--limit completedLeads=200 --limit annualKwh=50000000` (repetible) |
+| Entrega | `--execution-mode sectors\|full` (por defecto `sectors`), `--sectors-in-flight N` (1–20, 2 por defecto), `--lead-batch-size N` (1–500, 25 por defecto) |
 | Otros | `--address t`, `--region t`, `--start`, `--data @body.json` |
 
 La respuesta trae `campaign.idCampaign`, `configuration`, `estimatedCreditsPerLead`, `basedOn` y `warnings`.
@@ -114,7 +124,14 @@ La respuesta trae `campaign.idCampaign`, `configuration`, `estimatedCreditsPerLe
 - El nuevo límite tiene que ser mayor que los leads actuales.
 - Los sectores agotados no se vuelven a buscar; solo los leads nuevos pasan por el pipeline.
 - En `campaigns get`, `sectorSearch.incomplete + unknown > 0` indica que todavía se pueden encontrar más leads.
-- Errores: `CAMPAIGN_RUNNING`, `CAMPAIGN_NOT_STARTED`, `UNSUPPORTED_SOURCE`, `VALIDATION_ERROR`.
+- No se puede ampliar mientras queden sectores en cola o esperando turno (`CAMPAIGN_RUNNING`). En modo `sectors`, los sectores que se vuelven a buscar esperan su turno.
+- Errores: `CAMPAIGN_RUNNING`, `CAMPAIGN_NOT_STARTED`, `UNSUPPORTED_SOURCE`, `VALIDATION_ERROR`, `CREDIT_LIMIT_REACHED`, `LIMIT_REACHED`.
+
+**`full-sweep`:**
+- Solo sobre una campaña en `sectors`, en curso o pausada. Pausada, los sectores quedan en cola y los despacha `unpause`.
+- Responde `{ campaignId, executionMode: 'full', sectorsReleased, dispatched }`.
+- Paga ya la búsqueda de todos los sectores que esperaban (`sectorProgress.waiting`) y pone sus leads en vuelo a la vez: dilo y pide confirmación antes.
+- Errores: `INVALID_EXECUTION_MODE`, `INVALID_CAMPAIGN_STATE`, `CREDIT_LIMIT_REACHED`, `LIMIT_REACHED`.
 
 ## Configuración del pipeline (`config`, `steps`)
 
@@ -185,8 +202,11 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `VALIDATION_ERROR` (400/422) | Corrige el cuerpo; `details[]` indica `index`, `uid`, `field` y `message` |
 | `INVALID_AREA` | Área mal formada o fuera de límites |
 | `CAMPAIGN_NOT_FOUND`, `LEAD_NOT_FOUND`, `TEMPLATE_NOT_FOUND`, `EXPORT_TABLE_NOT_FOUND` | Id inexistente o de otra empresa |
-| `INVALID_CAMPAIGN_STATE` | `start` solo funciona sobre campañas `queued`; `pause` solo sobre campañas en marcha; `unpause` solo sobre `paused`; `cancel` sobre en marcha, `paused` o `queued` |
-| `CAMPAIGN_RUNNING` / `CAMPAIGN_NOT_STARTED` | Espera a que termine, o arráncala primero |
+| `INVALID_CAMPAIGN_STATE` | `start` solo funciona sobre campañas `queued`; `pause` solo sobre campañas en marcha; `unpause` solo sobre `paused`; `cancel` sobre en marcha, `paused` o `queued`; `full-sweep` sobre en marcha o `paused` |
+| `CAMPAIGN_RUNNING` / `CAMPAIGN_NOT_STARTED` | Espera a que termine (sin sectores en cola ni esperando turno), o arráncala primero |
+| `CREDIT_LIMIT_REACHED` | La campaña está en su techo de créditos: súbelo con `campaigns credit-limit` y después `unpause` |
+| `LIMIT_REACHED` | La campaña alcanzó un objetivo (`details.limits`): súbelo o quítalo con `campaigns limits` y después `unpause` |
+| `INVALID_EXECUTION_MODE` | `full-sweep` sobre una campaña que ya está en barrido completo |
 | `PENDING_STEP`, `NO_LEADS`, `STEP_NOT_RUNNABLE` | Condiciones de `resume` y `steps run` no cumplidas; lee `message` |
 | `AMBIGUOUS_STEP` | Usa uno de los uids de `details` |
 | `DEPENDENCY_NOT_MET` | Ejecuta antes la dependencia o usa `--force` |

@@ -31,6 +31,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 | GET | `/catalog/ai-agents` | Agentes válidos para `AI_AGENT.config.agentId` |
 | GET | `/catalog/business-groups` | Grupos para `businessGroups` |
 | GET | `/catalog/states` | Estados de campaña y de lead |
+| GET | `/catalog/campaign-limits` | Métricas que admiten objetivo en `limits`: `key`, `unit`, `description`, `integer`. La lista es extensible |
 
 ## Campañas
 
@@ -42,12 +43,14 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 | POST | `/campaigns/excel/preview` | multipart `file` (+ `?sampleSize`) → `{ headers, sampleRows, totalRows }` |
 | POST | `/campaigns/excel/geocode-test` | multipart `file` + `payload` JSON `{ columns[], sampleSize?, region? }` → `{ testId, results[{row, query, success, coordinates, formattedAddress, error}] }` |
 | POST | `/campaigns/from-excel` | multipart `file` + `payload` JSON `{ name, columnMapping{commercialName{column\|literal}, coordinates?, address?[], phone?, url?, email?, country?, googlePlacesType?}, geocoding?{enabled, columns[]}, templateId? \| fromCampaignId? \| steps?, maxLeads?, region?, description?, start? }` → como `POST /campaigns` más `leads`. Origen `excel`: entra por IMPORT_LEADS (+ GEOCODE_ADDRESS si geocodifica) y no admite `extend` |
-| GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch`, `configuration`, `creditLimit`, `credits` `{limit, spent, reserved, remaining, reached}` y, si está pausada, `pauseReason` (`credit_limit` \| `manual`) |
+| GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch` (`{ total, exhausted, incomplete, queued, unknown, waiting }`), `executionMode`, `sectorsInFlight` (`null` en `full`), `sectorProgress` `{ total, settled, inFlight, waiting, skipped, leadsWaiting }`, `leadBatchSize` (`null` en `full`), `configuration`, `creditLimit`, `credits` `{limit, spent, reserved, remaining, reached}`, `limits` `[{ key, unit, value, current, reached }]` (el techo va incluido como `key: 'credits'`) y, si está pausada, `pauseReason` (`credit_limit` \| `limit_reached` \| `manual`) |
 | PUT | `/campaigns/:id/credit-limit` | `{ "creditLimit": 150000 }` o `{ "creditLimit": null }` para quitar el techo (entero > 0 o `null`; si no, `400 VALIDATION_ERROR`). Vale en cualquier estado. Devuelve `{ campaignId, creditLimit, credits }`. Subirlo NO reanuda: hay que llamar después a `/unpause` |
+| PATCH | `/campaigns/:id/limits` | Parche de objetivos: `{ "completedLeads": 200, "annualKwh": null }` fija uno y quita otro. Clave desconocida o valor no positivo: `400 VALIDATION_ERROR`. Subir o quitar un objetivo NO reanuda: después, `/unpause` |
+| POST | `/campaigns/:id/full-sweep` | Pasa a barrido completo (irreversible). Devuelve `{ campaignId, executionMode: 'full', sectorsReleased, dispatched }`. Ver *Entrega por sectores* |
 | DELETE | `/campaigns/:id` | Borra la campaña con sectores, leads, ejecuciones, configuración y jobs |
 | POST | `/campaigns/:id/start` | Arranca una campaña `queued` (`409 INVALID_CAMPAIGN_STATE` si no lo está) |
 | POST | `/campaigns/:id/pause` | Pausa una campaña en marcha: retira el trabajo en cola y lo que está en vuelo termina sin encolar más, así que deja de gastar créditos. Solo desde `inProgress`, `sectorized`, `leadsFound` o `analyzed` (si no, `409 INVALID_CAMPAIGN_STATE`). Devuelve `{ campaignId, removedJobs, paused: true }` |
-| POST | `/campaigns/:id/unpause` | Reanuda una campaña `paused` por donde iba: encola el siguiente paso pendiente de cada lead sin repetir ni volver a cobrar los ya ejecutados. Devuelve `{ campaignId, dispatchedLeads, paused: false }`. `409 CREDIT_LIMIT_REACHED` si la campaña sigue en su techo de créditos. No confundir con `/resume`, que añade un paso nuevo |
+| POST | `/campaigns/:id/unpause` | Reanuda una campaña `paused` por donde iba: encola el siguiente paso pendiente de cada lead sin repetir ni volver a cobrar los ya ejecutados. Devuelve `{ campaignId, dispatchedLeads, paused: false }`. `409 CREDIT_LIMIT_REACHED` si la campaña sigue en su techo de créditos y `409 LIMIT_REACHED` si tiene un objetivo alcanzado. No confundir con `/resume`, que añade un paso nuevo |
 | POST | `/campaigns/:id/cancel` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola. Conserva los leads y los datos ya obtenidos (siguen consultables y exportables; lo ejecutado ya está cobrado). Devuelve `{ campaignId, removedJobs, canceled: true }`. Para vaciarla, `/reset` |
 | POST | `/campaigns/:id/reset` | `?start=true` para relanzarla. Borra leads y resultados |
 | POST | `/campaigns/:id/extend` | `{ "maxLeads": 500 }` o `{ "maxLeads": null }` para quitar el límite |
@@ -82,6 +85,10 @@ curl -s -X PATCH -H "$H" "$API/campaigns/$ID/configuration" \
 curl -s -H "$H" "$API/campaigns/$ID/funnel" | jq '.data.steps[] | {name, reached, criteria}'
 ```
 
+### Caducidad de los pasos asíncronos
+
+Un paso asíncrono que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY y a las 24 h en el resto; en modo `sectors`, ninguno espera más de 2 h, porque un sector no deja hueco al siguiente hasta que terminan sus leads. Se cambia por paso con `asyncTimeoutMinutes` en su `config`. Al caducar, el lead pasa a `failed` y el paso no se cobra. Si el webhook llega después, el resultado se guarda, pero el lead no cambia de estado ni sigue la cadena.
+
 ### Mensaje de un AI_AGENT (`messageTemplate`)
 
 El agente recibe, por cada lead, su `config.messageTemplate` con las variables sustituidas:
@@ -103,6 +110,10 @@ POST /campaigns
   "area": { "type": "circle", "center": { "lat": 37.3509, "lng": -6.2757 }, "radiusMeters": 5000 },
   "templateId": "Greenvolt industria",
   "maxLeads": 50,
+  "executionMode": "sectors",
+  "sectorsInFlight": 2,
+  "leadBatchSize": 25,
+  "limits": { "completedLeads": 30 },
   "start": false
 }
 ```
@@ -119,6 +130,8 @@ POST /campaigns
   - `businessGroups` es `["businesses"]` por defecto si no hay base.
   - Opcionales: `searchQuery`, `description`, `inputAddress` y `region`.
   - `creditLimit`: techo de gasto de la campaña en créditos. Si no se manda, **100.000**; `null` la deja sin techo. Igual en `POST /campaigns/from-excel`.
+  - `limits`: objetivos, `{ completedLeads?, annualKwh?, roofAreaM2? }`. Ver *Objetivos de campaña*.
+  - `executionMode`: `sectors` (por defecto en las campañas de Maps) o `full`. `sectorsInFlight`: sectores a la vez en modo `sectors`, de 1 a 20 (2 por defecto). `leadBatchSize`: leads de un sector que entran a la vez, de 1 a 500 (25 por defecto). Valores no válidos: `400 VALIDATION_ERROR`. Las campañas copiadas de otra (`fromCampaignId`) y las de Excel van siempre en `full`.
 - **Respuesta:** `{ campaign, area, configuration, estimatedCreditsPerLead, basedOn, started, warnings }`.
 - **Errores:** `422 VALIDATION_ERROR` trae en `details[]` el `index`, `uid`, `action`, `field` y `message` de cada problema. Otros: `400 INVALID_AREA`, `404 TEMPLATE_NOT_FOUND`, `400 UNSUPPORTED_SOURCE`.
 
@@ -128,11 +141,13 @@ POST /campaigns
 - **Respuesta:** `{ campaignId, previousMaxLeads, maxLeads, currentLeads, sectors: {total, queued, exhausted}, started, campaign }`.
 - **Si no queda nada que buscar:** `sectors.queued = 0`. El límite se guarda, pero no se busca nada.
 - **Errores:**
-  - `409 CAMPAIGN_RUNNING`: la campaña está en marcha o tiene búsquedas en cola.
+  - `409 CAMPAIGN_RUNNING`: la campaña está en marcha o tiene búsquedas en cola o sectores esperando turno.
   - `409 CAMPAIGN_NOT_STARTED`: todavía está `queued`.
   - `400 UNSUPPORTED_SOURCE`: no es de Maps.
   - `400 VALIDATION_ERROR`: el límite no es mayor que los leads actuales.
   - `409 CREDIT_LIMIT_REACHED`: la campaña ya está en su techo de créditos; súbelo con `PUT /campaigns/:id/credit-limit`.
+  - `409 LIMIT_REACHED`: la campaña tiene un objetivo alcanzado; súbelo o quítalo con `PATCH /campaigns/:id/limits`.
+- **En modo `sectors`:** los sectores que se vuelven a buscar esperan su turno como los demás.
 - **Cuándo tiene sentido:** en `GET /campaigns/:id`, `sectorSearch` da `{ total, exhausted, incomplete, queued, unknown }`. Con `incomplete + unknown > 0` todavía puede aparecer algo.
 
 ### Techo de créditos (`creditLimit`)
@@ -144,6 +159,37 @@ Toda campaña creada desde la API nace con `creditLimit: 100000` salvo que se ma
 - **Mientras esté alcanzado:** `/unpause`, `/extend` y `/campaigns/:id/leads/:leadId/steps/:step/run` devuelven `409 CREDIT_LIMIT_REACHED` con `details: { creditLimit, spent, reserved }`.
 - **Para seguir:** `PUT /campaigns/:id/credit-limit` con un techo mayor (o `null`) y después `POST /campaigns/:id/unpause`.
 - Las campañas anteriores a esta función tienen `creditLimit: null` (sin techo) hasta que se les ponga uno.
+
+### Objetivos de campaña (`limits`)
+
+Además del techo de créditos, una campaña puede tener objetivos. Solo cuentan los leads `completed`: un lead descartado, fallido o a medias no suma.
+
+| Clave | Unidad | Qué cuenta |
+|---|---|---|
+| `completedLeads` | leads | Leads completados al 100 % (entero) |
+| `annualKwh` | kWh | Consumo anual estimado; usa la parte imputable cuando varios negocios comparten parcela, así una parcela compartida no se cuenta dos veces |
+| `roofAreaM2` | m² | Superficie de cubierta, una vez por parcela catastral |
+
+La lista sale de `GET /catalog/campaign-limits`: cuando aparezca una métrica nueva, se usa igual.
+
+- **Al alcanzar cualquiera:** en `sectors` deja de admitir sectores (los que esperaban se cierran como `skippedByLimit`), los que están en vuelo terminan y la campaña se cierra sola. En `full` se pausa con `pauseReason: limit_reached`.
+- **Objetivo blando:** se pasa por lo que tengan en vuelo.
+- **Mientras esté alcanzado:** `/unpause`, `/extend` y `/full-sweep` devuelven `409 LIMIT_REACHED` con `details.limits`.
+- **Para seguir:** `PATCH /campaigns/:id/limits` subiéndolo o con `null` y después `POST /campaigns/:id/unpause`.
+
+### Entrega por sectores (`executionMode`)
+
+| Modo | Qué hace |
+|---|---|
+| `sectors` | Busca un sector, termina sus leads y pasa al siguiente, del centro del área hacia fuera, con `sectorsInFlight` sectores a la vez y, dentro de cada sector, los leads en tandas de `leadBatchSize` (la siguiente entra cuando termina la anterior). Si la campaña se para (a mano, por techo o por objetivo), deja leads terminados en lugar de cientos a medias. De serie en las campañas nuevas de Maps |
+| `full` | Barrido completo: todos los sectores a la vez y todos los leads en vuelo juntos. Lo conservan las campañas anteriores; Excel y campañas copiadas de otra van siempre así |
+
+- **`sectorProgress`:** `settled` = búsqueda hecha y todos sus leads terminados; `inFlight` = en curso; `waiting` = esperando turno; `skipped` = cerrados sin llegar a buscarse (por `maxLeads`, por un objetivo o por cancelación).
+- **Reparto desigual:** en una campaña de 92 sectores, 8 tenían dos tercios de los leads y el mayor 415. Un sector denso puede poner cientos de leads en vuelo a la vez.
+- **`POST /campaigns/:id/full-sweep`:** pasa de `sectors` a `full` (al revés no se puede). Los sectores que esperaban se buscan ya, así que su búsqueda se paga en ese momento. Si la campaña está pausada, quedan en cola y los despacha `/unpause`. Errores:
+  - `409 INVALID_EXECUTION_MODE`: ya está en `full`.
+  - `409 INVALID_CAMPAIGN_STATE`: no está en curso ni pausada.
+  - `409 CREDIT_LIMIT_REACHED` / `409 LIMIT_REACHED`: tiene el techo o un objetivo alcanzado.
 
 ## Consumo de la cuenta
 
@@ -315,6 +361,10 @@ curl -s -X POST "$API/campaigns/$ID/unpause" -H "$H"
 curl -s -H "$H" "$API/campaigns/$ID" | jq '.data | {creditLimit, credits, pauseReason}'
 curl -s -X PUT "$API/campaigns/$ID/credit-limit" -H "$H" -H "$J" -d '{"creditLimit":150000}'
 curl -s -X POST "$API/campaigns/$ID/unpause" -H "$H"
+# 5d. Objetivos y entrega por sectores: ver el avance, fijar un objetivo y pasar a barrido completo
+curl -s -H "$H" "$API/campaigns/$ID" | jq '.data | {executionMode, sectorsInFlight, sectorProgress, limits}'
+curl -s -X PATCH "$API/campaigns/$ID/limits" -H "$H" -H "$J" -d '{"completedLeads":200,"annualKwh":null}'
+curl -s -X POST "$API/campaigns/$ID/full-sweep" -H "$H"
 # 6. Tabla de exportación: rutas del paso QUALIFY y del agente de CIF, tabla, columna en 2ª posición y CSV
 curl -s -H "$H" "$API/campaigns/$ID/fields?step=QUALIFY" | jq '.data.steps[0].fields[] | {path, type}'
 curl -s -H "$H" "$API/campaigns/$ID/fields?step=cif" | jq '.data.steps[0].fields[] | select(.path | test("cnae")) | .path'

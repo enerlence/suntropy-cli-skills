@@ -4,6 +4,8 @@ Cada acción del pipeline gasta créditos por lead. Habla siempre en créditos, 
 
 Toda campaña nueva nace con un techo de **100.000 créditos**: al alcanzarlo se pausa sola en vez de seguir gastando. Dilo al crearla y al ampliarla, y mira `campaigns get` → `credits` para saber cuánto queda. Ver [Techo de créditos](#techo-de-créditos-de-la-campaña).
 
+Las campañas nuevas de Maps van **por sectores**: buscan un sector, terminan sus leads y pasan al siguiente, del centro del área hacia fuera. Si se paran, dejan leads terminados y no cientos a medias. Ver [Entrega por sectores](#entrega-por-sectores-y-barrido-completo). Si el usuario expresa su meta en leads, kWh o m², ponle un **objetivo**: la campaña se cierra sola al alcanzarlo. Ver [Objetivos](#objetivos-de-campaña).
+
 ## Parámetros de entrada
 
 | Parámetro | Obligatorio | Default |
@@ -13,6 +15,8 @@ Toda campaña nueva nace con un techo de **100.000 créditos**: al alcanzarlo se
 | Consulta de texto (en vez de búsqueda por cercanía) | No | - |
 | Máximo de leads | No | sin límite |
 | Techo de gasto en créditos | No | 100.000 créditos |
+| Objetivos (`completedLeads`, `annualKwh`, `roofAreaM2`) | No | ninguno |
+| Modo de ejecución (`sectors` o `full`) y sectores a la vez | No | `sectors`, 2 a la vez |
 | Grupos de negocio | No | `businesses` |
 | Plantilla o campaña base (pasos, grupos, límite) | No | - |
 | Pasos del pipeline (acciones y su config) | No | los de la base; sin base, ninguno (solo descubre leads) |
@@ -104,9 +108,15 @@ suntropy satvolt campaigns create --name "<nombre>" --polygon @area.geojson --st
 # Desde una plantilla o copiando otra campaña (los flags explícitos tienen prioridad)
 suntropy satvolt campaigns create --name "<nombre>" --template "<plantilla>" --circle <lat>,<lng> --radius <m>
 suntropy satvolt campaigns create --name "<nombre>" --from-campaign <id> --bounds <nwLat>,<nwLng>,<seLat>,<seLng> --max-leads 100
+
+# Con objetivos (repetible) y otro ritmo de entrega
+suntropy satvolt campaigns create --name "<nombre>" --template "<plantilla>" --circle <lat>,<lng> --radius <m> \
+  --limit completedLeads=200 --limit annualKwh=50000000 --sectors-in-flight 3
 ```
 
 La respuesta trae `campaign.idCampaign`, `estimatedCreditsPerLead` y `warnings`. La campaña queda en `queued`.
+
+Sale en modo `sectors` (entrega por sectores, 2 a la vez) salvo que se pase `--execution-mode full`. Díselo al usuario al crearla: la tabla irá creciendo sector a sector, empezando por el centro del área. Ver [Entrega por sectores](#entrega-por-sectores-y-barrido-completo).
 
 Coste estimado, antes de arrancar:
 - **Máximo:** `estimatedCreditsPerLead × maxLeads` (sin contar FIND_LEADS), como si todos los leads pasaran todos los pasos.
@@ -145,7 +155,12 @@ suntropy satvolt campaigns start <campaignId>
 suntropy satvolt campaigns logs <campaignId> --follow --format human   # termina solo al acabar la campaña
 suntropy satvolt campaigns funnel <campaignId> --format human           # alcanzados/success/failure/processing por paso
 suntropy satvolt campaigns funnel <campaignId> --mode success           # en cuántos leads el paso trajo el dato
+suntropy satvolt campaigns get <campaignId> --format human              # "Sector delivery: …" y el avance de cada objetivo
 ```
+
+En modo `sectors`, `campaigns get` da `sectorProgress`: sectores terminados, en curso y esperando turno. Revisa los leads del primer sector antes de que avance mucho: hace de canario, y un agente mal configurado se ve en unos pocos leads en lugar de en cientos.
+
+Un paso asíncrono (QUALIFY, AI_AGENT, CUSTOM_WEBHOOK…) que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY, a las 24 h en el resto (2 h todos en modo `sectors`), o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` y el paso no se cobra. Ver `satvolt-lead-troubleshooting`.
 
 **Ejecutar ≠ acertar.** Un agente puede terminar sin error respondiendo que no encontró
 nada: el paso cuenta como `success` y la columna se queda vacía. Para medirlo, cada paso
@@ -278,6 +293,8 @@ suntropy satvolt campaigns extend <campaignId> --no-limit     # barre entero cad
 - Coste ≈ leads nuevos × créditos por lead de la campaña (míralo con `campaigns usage`). Enséñaselo al usuario y pide confirmación antes de ampliar.
 - Comprueba que el techo de créditos da para la ampliación (`campaigns get` → `credits.remaining`): si ya está alcanzado, `extend` responde 409 `CREDIT_LIMIT_REACHED`, y si se queda corto la campaña se pausará sola a mitad.
 - En las campañas creadas antes de esta función, los sectores salen como `unknown` y cuentan como pendientes: se repiten sus primeras peticiones a Places, pero los duplicados no se crean.
+- Mientras queden sectores en cola o esperando turno (`sectorProgress.waiting > 0`), `extend` responde 409 `CAMPAIGN_RUNNING`. En modo `sectors`, los sectores que se vuelven a buscar al ampliar esperan su turno como los demás.
+- Con un objetivo alcanzado, `extend` responde 409 `LIMIT_REACHED`: sube o quita el objetivo antes. Ver [Objetivos](#objetivos-de-campaña).
 
 ### Techo de créditos de la campaña
 
@@ -299,6 +316,59 @@ suntropy satvolt campaigns create ... --no-credit-limit        # crear sin techo
 - Quitar el techo (`--off --yes`) deja a la campaña gastar sin tope: no lo hagas por iniciativa propia; pide confirmación explícita al usuario y ofrécele antes subirlo a una cifra concreta.
 - Las campañas creadas antes de esta función no tienen techo (`creditLimit: null`) hasta que se les ponga uno.
 
+### Entrega por sectores y barrido completo
+
+El área se divide en sectores. El campo `executionMode` de la campaña decide cómo se recorren:
+
+| Modo | Qué hace | Cuándo |
+|---|---|---|
+| `sectors` (de serie en las campañas nuevas de Maps) | Busca un sector, termina sus leads y pasa al siguiente, del centro del área hacia fuera, con `sectorsInFlight` sectores a la vez (2 de serie, de 1 a 20). Dentro de cada sector, los leads entran en el pipeline por tandas de `leadBatchSize` (25 de serie, de 1 a 500): la siguiente tanda entra cuando termina la anterior. La tabla crece por tandas de leads que avanzan juntos. | Casi siempre |
+| `full` (barrido completo) | Busca todos los sectores a la vez y pone todos los leads en vuelo juntos. Es el comportamiento de antes. | El usuario quiere estudiar el área entera o el embudo completo cuanto antes |
+
+```bash
+suntropy satvolt campaigns create ... --execution-mode sectors --sectors-in-flight 3 --lead-batch-size 20
+suntropy satvolt campaigns create ... --execution-mode full
+suntropy satvolt campaigns get <campaignId> --format human    # Sector delivery: 12 of 40 sectors done · 2 in progress · 26 waiting (2 at a time)
+suntropy satvolt campaigns full-sweep <campaignId> --yes      # pasar a barrido completo (irreversible)
+```
+
+- **Por qué `sectors`:** si la campaña se para (a mano, por el techo de créditos o por un objetivo), deja leads terminados en lugar de cientos a medias. Y el primer sector hace de canario: si un agente está mal configurado, se ve en unos pocos leads.
+- **`sectorProgress`** en `campaigns get`: `total`, `settled` (búsqueda hecha y todos sus leads terminados), `inFlight`, `waiting` (esperando turno), `skipped` (cerrados sin llegar a buscarse, por `maxLeads`, por un objetivo o por cancelación) y `leadsWaiting` (leads ya encontrados que esperan su tanda dentro de un sector). En modo `full`, `sectorsInFlight` y `leadBatchSize` son `null`.
+- **Qué va siempre en `full`:** las campañas creadas antes de esta función, las de Excel y las copiadas de otra campaña.
+- **Los leads se reparten muy desigual entre sectores.** En una campaña de 92 sectores, 8 tenían dos tercios de los leads y el mayor tenía 415. Por eso existen las tandas: con 25 por tanda y 2 sectores a la vez, nunca hay más de 50 leads en vuelo, aunque un sector tenga cientos. Un sector denso tarda más en asentarse (va tanda a tanda). `full-sweep` suelta también los leads que esperaban tanda.
+
+**Pasar a barrido completo (`full-sweep`).** Se puede pasar de `sectors` a `full` en cualquier momento; al revés no. Libera a la vez todos los sectores que esperaban turno: su búsqueda se paga ya y sus leads entran todos en vuelo. Propónlo solo si el usuario quiere el área o el embudo completo cuanto antes y acepta ese gasto; antes, dile cuántos sectores esperan (`sectorProgress.waiting`) y pide confirmación explícita. Sin `--yes`, el comando lo explica y sale sin hacer nada.
+
+- Responde `{ campaignId, executionMode: 'full', sectorsReleased, dispatched }`.
+- Si la campaña está pausada, los sectores quedan en cola y los despacha `unpause`.
+- Errores: 409 `INVALID_EXECUTION_MODE` (ya está en `full`), 409 `INVALID_CAMPAIGN_STATE` (no está en curso ni pausada), 409 `CREDIT_LIMIT_REACHED` o `LIMIT_REACHED` (tiene el techo o un objetivo alcanzado).
+
+### Objetivos de campaña
+
+Además del techo de créditos, una campaña puede tener **objetivos** (`limits`): al alcanzar cualquiera, deja de buscar. Solo cuentan los leads `completed`: un lead descartado, fallido o a medias no suma.
+
+| Objetivo | Qué cuenta |
+|---|---|
+| `completedLeads` | Leads completados al 100 % (entero) |
+| `annualKwh` | Consumo anual estimado. Usa la parte imputable cuando varios negocios comparten parcela, así una parcela compartida no se cuenta dos veces |
+| `roofAreaM2` | Superficie de cubierta, una vez por parcela catastral |
+
+La lista sale del catálogo y puede crecer: una métrica nueva se usa igual.
+
+```bash
+suntropy satvolt catalog campaign-limits                                   # métricas disponibles: key, unit, description, integer
+suntropy satvolt campaigns create ... --limit completedLeads=200 --limit annualKwh=50000000
+suntropy satvolt campaigns limits <campaignId>                             # verlos, con lo que llevan
+suntropy satvolt campaigns limits <campaignId> completedLeads=300 annualKwh=off   # fijar uno y quitar otro
+suntropy satvolt campaigns unpause <campaignId>                            # subir o quitar un objetivo NO reanuda
+```
+
+- **Al alcanzarlo:** en `sectors` deja de admitir sectores (los que esperaban se cierran como `skippedByLimit`), los que están en vuelo terminan y la campaña se cierra sola. En `full` se pausa con `pauseReason: limit_reached`.
+- **Es blando:** se pasa por lo que tengan en vuelo, igual que el techo de créditos.
+- `campaigns get` da `limits: [{ key, unit, value, current, reached }]`, con el techo de créditos incluido como `key: 'credits'`. En `--format human`: "Goal completedLeads: 120 of 200 leads (60%)".
+- Con un objetivo alcanzado, `unpause`, `extend` y `full-sweep` responden 409 `LIMIT_REACHED` con `details.limits`. Para seguir, súbelo o quítalo con `campaigns limits` y después `unpause`.
+- Ofrécelos cuando el usuario diga su meta en esos términos: "quiero 200 leads" es `completedLeads=200`; "busca 50 GWh de consumo" es `annualKwh=50000000`. No confundir con `--max-leads`, que limita los leads encontrados, no los completados.
+
 ### Pausar, reanudar y cancelar una campaña en marcha
 
 ```bash
@@ -311,7 +381,8 @@ suntropy satvolt campaigns cancel <campaignId> --yes   # DEFINITIVO; conserva le
 - `unpause` no es `resume`: `resume` añade un paso NUEVO a una campaña terminada.
 - Una campaña cancelada no se puede reanudar ni arrancar; lo único que queda es `reset` (que borra los leads) o crear otra. Lo ya ejecutado está cobrado.
 - Estados: `pause` solo desde una campaña en marcha; `unpause` solo desde `paused`; `cancel` desde en marcha, `paused` o `queued`. Si no, 409 `INVALID_CAMPAIGN_STATE`.
-- Una campaña se puede haber pausado sola al llegar a su techo de créditos (`pauseReason: credit_limit`): antes de reanudarla hay que subirlo, o `unpause` responde 409 `CREDIT_LIMIT_REACHED`. Ver la sección anterior.
+- Una campaña se puede haber pausado sola al llegar a su techo de créditos (`pauseReason: credit_limit`): antes de reanudarla hay que subirlo, o `unpause` responde 409 `CREDIT_LIMIT_REACHED`. Ver [Techo de créditos](#techo-de-créditos-de-la-campaña).
+- En modo `full`, también al alcanzar un objetivo (`pauseReason: limit_reached`): súbelo o quítalo con `campaigns limits` antes de `unpause`, o responde 409 `LIMIT_REACHED`.
 
 ### Consumo, reinicio y borrado
 
@@ -379,9 +450,12 @@ Los errores salen por stderr como `{ error, status, message, details }`:
 |---|---|
 | 422 `VALIDATION_ERROR` | pasos o config inválidos. `details` lista `index`, `uid`, `action`, `field` y `message` de cada problema. |
 | 400 `INVALID_AREA` | área mal formada o fuera de límites. |
+| 400 `VALIDATION_ERROR` | `--execution-mode`, `--sectors-in-flight` (1–20) o un objetivo no válidos: clave desconocida o valor no positivo. |
 | 400 `INVALID_EXCEL` | el Excel no tiene filas, o falta el nombre comercial o la forma de localizar cada fila (coordenadas o columnas a geocodificar). |
 | 400 `UNSUPPORTED_SOURCE` | `extend` sobre una campaña de Excel o copiada de otra: sus leads no se amplían. |
-| 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola (hay que hacer `reset` antes); `pause` sobre una que no está en marcha; `unpause` sobre una que no está `paused`. |
-| 409 `CREDIT_LIMIT_REACHED` | la campaña llegó a su techo de créditos: `unpause`, `extend` y `leads run-step` no se ejecutan hasta subirlo o quitarlo con `campaigns credit-limit`. `details` trae el techo, lo gastado y lo reservado. |
+| 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola (hay que hacer `reset` antes); `pause` sobre una que no está en marcha; `unpause` sobre una que no está `paused`; `full-sweep` sobre una que no está en curso ni pausada. |
+| 409 `CREDIT_LIMIT_REACHED` | la campaña llegó a su techo de créditos: `unpause`, `extend`, `full-sweep` y `leads run-step` no se ejecutan hasta subirlo o quitarlo con `campaigns credit-limit`. `details` trae el techo, lo gastado y lo reservado. |
+| 409 `LIMIT_REACHED` | la campaña alcanzó un objetivo: `unpause`, `extend` y `full-sweep` no se ejecutan hasta subirlo o quitarlo con `campaigns limits`. `details.limits` dice cuál. |
+| 409 `INVALID_EXECUTION_MODE` | `full-sweep` sobre una campaña que ya está en barrido completo. |
 | 409 `PENDING_STEP`, `STEP_NOT_RUNNABLE` | no se puede reanudar; `message` explica por qué. |
 | 401 `TOKEN_EXPIRED` | renueva el token con `suntropy auth refresh`. |
