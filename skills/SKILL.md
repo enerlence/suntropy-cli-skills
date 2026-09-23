@@ -41,7 +41,7 @@ suntropy auth status
 
 This skill includes detailed guides for the main workflows:
 
-- [[solar-study]] — Create or edit a complete solar study using the study builder. Covers tariff, consumption, equipment, production, SolarResultCalculator results, economics, comments, and saving to backend.
+- [[solar-study]] — Create or edit a complete solar study using the study builder. Covers tariff, consumption, equipment, production, SolarResultCalculator results, economics, comments, and saving to backend. **Also covers querying an existing study's economic/energy KPIs** (annual/monthly savings, excesses, coverage) in a single command — read its "Consulta rapida de un estudio existente" section before answering a tagged comment or email that asks for a study figure, instead of exploring the JSON by hand.
 - [[inventory-create]] — Create inventory items: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers.
 - [[inventory-create-kit]] — Create and assemble solar kits, EV charger kits, and heat pump kits with components and custom assets.
 - [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.

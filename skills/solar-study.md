@@ -425,6 +425,69 @@ Para anadir comentarios a un estudio que ya existe en el backend sin descargarlo
 suntropy studies comment <studyId> --content "Revision completada por agente"
 ```
 
+## Consulta rapida de un estudio existente (KPIs economicos y energeticos)
+
+> Caso tipico: te etiquetan en un comentario de un estudio o recibes un correo
+> preguntando por un dato de un estudio que YA existe (p. ej. "dime el ahorro
+> mensual de este estudio"). El dato casi siempre **ya esta calculado** en el
+> estudio: NO lo recalcules desde cero ni explores el JSON a ciegas.
+
+**Regla de oro:** usa SIEMPRE el id que te llega (`ID_COMMENTED_STUDY`). NUNCA
+busques el estudio por nombre o cliente en `studies list`: puede haber
+homonimos y acabarias respondiendo sobre OTRO estudio.
+
+### Paso unico (resuelve la mayoria de preguntas)
+
+```bash
+suntropy studies get <ID_COMMENTED_STUDY> --expand economics,results --format json
+```
+
+Lee directamente estos campos (no hagas calculos a mano):
+
+| Dato que te piden | Campo a leer |
+|---|---|
+| **Ahorro mensual** (promedio, el que muestra el front) | `economicResults.yearlyEconomicBalance[0].accumulatedSavings / 12` |
+| Ahorro economico del primer ano | `economicResults.yearlyEconomicBalance[0].accumulatedSavings` |
+| Cashflow / payback ano a ano | `economicResults.yearlyEconomicBalance[]` (`accumulatedSavings`, `accumulatedCashFlow`, ...) |
+| Ahorro energetico anual (factura) | `results.totalSavings` |
+| Ahorro por periodo (p1..p6) | `results.totalSavingsByPeriod` |
+| Gasto anual sin / con solar | `results.totalRawSpending` / `results.totalNetSpending` |
+| Excedentes anuales (kWh) | `results.totalExcesses` |
+| Cobertura solar (%) | `results.totalConsumptionCoverage` |
+| Produccion anual (kWh) | `results.totalProduction` |
+
+Potencia pico, coste total, precio de venta, produccion/consumo anual, estado o
+nombre de cliente **no estan en el documento** del estudio, sino en su metadata:
+
+```bash
+suntropy studies metadata <ID_COMMENTED_STUDY> --by-study-id \
+  --fields peakPower,totalCost,sellingPrice,clientName,anualProduction,anualConsumption
+```
+
+### Si faltan `results` o `economicResults` (estudio sin calcular)
+
+Solo si el `get --expand` los devuelve vacios/undefined, descargalo y recalcula
+con el calculador oficial (sigue SIN inventar precios ni prorratear a mano):
+
+```bash
+suntropy studies pull <ID_COMMENTED_STUDY> --file /tmp/study.json
+suntropy studies calculate-results --file /tmp/study.json   # rellena `results`
+# vuelve a leer los campos de la tabla sobre /tmp/study.json
+```
+
+Nota: `calculate-results` rellena `results` (ahorro energetico/por periodo,
+excedentes, cobertura, produccion). El balance economico completo
+(`economicResults.yearlyEconomicBalance`, con `accumulatedSavings`) lo calcula
+el frontend al guardar; si no esta presente, usa `results.totalSavings / 12`
+como ahorro mensual promedio aproximado e indica que es el ahorro en factura.
+
+### Prohibido
+
+- NO recalcules el ahorro/excedentes con `node -e` ni asumas un "precio medio":
+  usa los campos ya calculados de las tablas de arriba.
+- NO busques el estudio por nombre; usa el `ID_COMMENTED_STUDY` que te dieron.
+- NO encadenes docenas de `node -e` explorando el JSON: los campos estan aqui.
+
 ## Presentacion de resultados
 
 > Antes de este resumen ejecuta el **Paso 8.5 (Diagnostico de KPIs clave)** e incluye en la
