@@ -206,6 +206,16 @@ suntropy satvolt export-tables export <tableId> --file-format csv --out campaña
 ```
 
 - **Tipos de columna:** `string`, `number`, `boolean`, `date`, `url`. Sin tipo, se usa el que declara el paso para esa ruta.
+- **Personas: apunta al objeto, no a su nombre.** Una columna a
+  `fullData.<clave decisores>.response.mainDecisionMaker` (y `relevantProfiles` para la
+  lista) llega a la tabla con nombre, cargo, foto y perfil, y la interfaz la pinta como
+  ficha con su avatar. Apuntando a `…mainDecisionMaker.name` solo viaja el texto del
+  nombre: la foto y el cargo no llegan y ya no se pueden recuperar en la tabla. En el
+  Excel y el CSV esa columna sale como "Nombre — Cargo (perfil)".
+- **Formato de columna** (`--format`, opcional y aditivo): `phone`, `email`, `linkedin`,
+  `website`, `address`, `coordinates`, `energy`, `money`, `percent`, `cnae`,
+  `qualification`, `image`, `person`, `people`. Dice qué SIGNIFICA el valor; el `type`
+  sigue gobernando el orden y el casting.
 - **`warnings` con `UNKNOWN_FULLDATA_KEY`:** ningún paso de la campaña escribe esa clave; revisa la ruta con `export-tables fields`.
 
 ### Paso 6: Cambiar el pipeline
