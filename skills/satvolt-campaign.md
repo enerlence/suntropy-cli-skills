@@ -322,20 +322,20 @@ El área se divide en sectores. El campo `executionMode` de la campaña decide c
 
 | Modo | Qué hace | Cuándo |
 |---|---|---|
-| `sectors` (de serie en las campañas nuevas de Maps) | Busca un sector, termina sus leads y pasa al siguiente, del centro del área hacia fuera, con `sectorsInFlight` sectores a la vez (2 de serie, de 1 a 20). La tabla crece sector a sector con leads que avanzan juntos. | Casi siempre |
+| `sectors` (de serie en las campañas nuevas de Maps) | Busca un sector, termina sus leads y pasa al siguiente, del centro del área hacia fuera, con `sectorsInFlight` sectores a la vez (2 de serie, de 1 a 20). Dentro de cada sector, los leads entran en el pipeline por tandas de `leadBatchSize` (25 de serie, de 1 a 500): la siguiente tanda entra cuando termina la anterior. La tabla crece por tandas de leads que avanzan juntos. | Casi siempre |
 | `full` (barrido completo) | Busca todos los sectores a la vez y pone todos los leads en vuelo juntos. Es el comportamiento de antes. | El usuario quiere estudiar el área entera o el embudo completo cuanto antes |
 
 ```bash
-suntropy satvolt campaigns create ... --execution-mode sectors --sectors-in-flight 3
+suntropy satvolt campaigns create ... --execution-mode sectors --sectors-in-flight 3 --lead-batch-size 20
 suntropy satvolt campaigns create ... --execution-mode full
 suntropy satvolt campaigns get <campaignId> --format human    # Sector delivery: 12 of 40 sectors done · 2 in progress · 26 waiting (2 at a time)
 suntropy satvolt campaigns full-sweep <campaignId> --yes      # pasar a barrido completo (irreversible)
 ```
 
 - **Por qué `sectors`:** si la campaña se para (a mano, por el techo de créditos o por un objetivo), deja leads terminados en lugar de cientos a medias. Y el primer sector hace de canario: si un agente está mal configurado, se ve en unos pocos leads.
-- **`sectorProgress`** en `campaigns get`: `total`, `settled` (búsqueda hecha y todos sus leads terminados), `inFlight`, `waiting` (esperando turno) y `skipped` (cerrados sin llegar a buscarse, por `maxLeads`, por un objetivo o por cancelación). En modo `full`, `sectorsInFlight` es `null`.
+- **`sectorProgress`** en `campaigns get`: `total`, `settled` (búsqueda hecha y todos sus leads terminados), `inFlight`, `waiting` (esperando turno), `skipped` (cerrados sin llegar a buscarse, por `maxLeads`, por un objetivo o por cancelación) y `leadsWaiting` (leads ya encontrados que esperan su tanda dentro de un sector). En modo `full`, `sectorsInFlight` y `leadBatchSize` son `null`.
 - **Qué va siempre en `full`:** las campañas creadas antes de esta función, las de Excel y las copiadas de otra campaña.
-- **Los leads se reparten muy desigual entre sectores.** En una campaña de 92 sectores, 8 tenían dos tercios de los leads y el mayor tenía 415. Un sector denso puede poner cientos de leads en vuelo a la vez aunque vaya por sectores.
+- **Los leads se reparten muy desigual entre sectores.** En una campaña de 92 sectores, 8 tenían dos tercios de los leads y el mayor tenía 415. Por eso existen las tandas: con 25 por tanda y 2 sectores a la vez, nunca hay más de 50 leads en vuelo, aunque un sector tenga cientos. Un sector denso tarda más en asentarse (va tanda a tanda). `full-sweep` suelta también los leads que esperaban tanda.
 
 **Pasar a barrido completo (`full-sweep`).** Se puede pasar de `sectors` a `full` en cualquier momento; al revés no. Libera a la vez todos los sectores que esperaban turno: su búsqueda se paga ya y sus leads entran todos en vuelo. Propónlo solo si el usuario quiere el área o el embudo completo cuanto antes y acepta ese gasto; antes, dile cuántos sectores esperan (`sectorProgress.waiting`) y pide confirmación explícita. Sin `--yes`, el comando lo explica y sale sin hacer nada.
 

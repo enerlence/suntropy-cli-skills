@@ -43,7 +43,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 | POST | `/campaigns/excel/preview` | multipart `file` (+ `?sampleSize`) → `{ headers, sampleRows, totalRows }` |
 | POST | `/campaigns/excel/geocode-test` | multipart `file` + `payload` JSON `{ columns[], sampleSize?, region? }` → `{ testId, results[{row, query, success, coordinates, formattedAddress, error}] }` |
 | POST | `/campaigns/from-excel` | multipart `file` + `payload` JSON `{ name, columnMapping{commercialName{column\|literal}, coordinates?, address?[], phone?, url?, email?, country?, googlePlacesType?}, geocoding?{enabled, columns[]}, templateId? \| fromCampaignId? \| steps?, maxLeads?, region?, description?, start? }` → como `POST /campaigns` más `leads`. Origen `excel`: entra por IMPORT_LEADS (+ GEOCODE_ADDRESS si geocodifica) y no admite `extend` |
-| GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch` (`{ total, exhausted, incomplete, queued, unknown, waiting }`), `executionMode`, `sectorsInFlight` (`null` en `full`), `sectorProgress` `{ total, settled, inFlight, waiting, skipped }`, `configuration`, `creditLimit`, `credits` `{limit, spent, reserved, remaining, reached}`, `limits` `[{ key, unit, value, current, reached }]` (el techo va incluido como `key: 'credits'`) y, si está pausada, `pauseReason` (`credit_limit` \| `limit_reached` \| `manual`) |
+| GET | `/campaigns/:id` | Detalle con `leadStates`, `sectorSearch` (`{ total, exhausted, incomplete, queued, unknown, waiting }`), `executionMode`, `sectorsInFlight` (`null` en `full`), `sectorProgress` `{ total, settled, inFlight, waiting, skipped, leadsWaiting }`, `leadBatchSize` (`null` en `full`), `configuration`, `creditLimit`, `credits` `{limit, spent, reserved, remaining, reached}`, `limits` `[{ key, unit, value, current, reached }]` (el techo va incluido como `key: 'credits'`) y, si está pausada, `pauseReason` (`credit_limit` \| `limit_reached` \| `manual`) |
 | PUT | `/campaigns/:id/credit-limit` | `{ "creditLimit": 150000 }` o `{ "creditLimit": null }` para quitar el techo (entero > 0 o `null`; si no, `400 VALIDATION_ERROR`). Vale en cualquier estado. Devuelve `{ campaignId, creditLimit, credits }`. Subirlo NO reanuda: hay que llamar después a `/unpause` |
 | PATCH | `/campaigns/:id/limits` | Parche de objetivos: `{ "completedLeads": 200, "annualKwh": null }` fija uno y quita otro. Clave desconocida o valor no positivo: `400 VALIDATION_ERROR`. Subir o quitar un objetivo NO reanuda: después, `/unpause` |
 | POST | `/campaigns/:id/full-sweep` | Pasa a barrido completo (irreversible). Devuelve `{ campaignId, executionMode: 'full', sectorsReleased, dispatched }`. Ver *Entrega por sectores* |
@@ -112,6 +112,7 @@ POST /campaigns
   "maxLeads": 50,
   "executionMode": "sectors",
   "sectorsInFlight": 2,
+  "leadBatchSize": 25,
   "limits": { "completedLeads": 30 },
   "start": false
 }
@@ -130,7 +131,7 @@ POST /campaigns
   - Opcionales: `searchQuery`, `description`, `inputAddress` y `region`.
   - `creditLimit`: techo de gasto de la campaña en créditos. Si no se manda, **100.000**; `null` la deja sin techo. Igual en `POST /campaigns/from-excel`.
   - `limits`: objetivos, `{ completedLeads?, annualKwh?, roofAreaM2? }`. Ver *Objetivos de campaña*.
-  - `executionMode`: `sectors` (por defecto en las campañas de Maps) o `full`. `sectorsInFlight`: sectores a la vez en modo `sectors`, de 1 a 20 (2 por defecto). Valores no válidos: `400 VALIDATION_ERROR`. Las campañas copiadas de otra (`fromCampaignId`) y las de Excel van siempre en `full`.
+  - `executionMode`: `sectors` (por defecto en las campañas de Maps) o `full`. `sectorsInFlight`: sectores a la vez en modo `sectors`, de 1 a 20 (2 por defecto). `leadBatchSize`: leads de un sector que entran a la vez, de 1 a 500 (25 por defecto). Valores no válidos: `400 VALIDATION_ERROR`. Las campañas copiadas de otra (`fromCampaignId`) y las de Excel van siempre en `full`.
 - **Respuesta:** `{ campaign, area, configuration, estimatedCreditsPerLead, basedOn, started, warnings }`.
 - **Errores:** `422 VALIDATION_ERROR` trae en `details[]` el `index`, `uid`, `action`, `field` y `message` de cada problema. Otros: `400 INVALID_AREA`, `404 TEMPLATE_NOT_FOUND`, `400 UNSUPPORTED_SOURCE`.
 
@@ -180,7 +181,7 @@ La lista sale de `GET /catalog/campaign-limits`: cuando aparezca una métrica nu
 
 | Modo | Qué hace |
 |---|---|
-| `sectors` | Busca un sector, termina sus leads y pasa al siguiente, del centro del área hacia fuera, con `sectorsInFlight` sectores a la vez. Si la campaña se para (a mano, por techo o por objetivo), deja leads terminados en lugar de cientos a medias. De serie en las campañas nuevas de Maps |
+| `sectors` | Busca un sector, termina sus leads y pasa al siguiente, del centro del área hacia fuera, con `sectorsInFlight` sectores a la vez y, dentro de cada sector, los leads en tandas de `leadBatchSize` (la siguiente entra cuando termina la anterior). Si la campaña se para (a mano, por techo o por objetivo), deja leads terminados en lugar de cientos a medias. De serie en las campañas nuevas de Maps |
 | `full` | Barrido completo: todos los sectores a la vez y todos los leads en vuelo juntos. Lo conservan las campañas anteriores; Excel y campañas copiadas de otra van siempre así |
 
 - **`sectorProgress`:** `settled` = búsqueda hecha y todos sus leads terminados; `inFlight` = en curso; `waiting` = esperando turno; `skipped` = cerrados sin llegar a buscarse (por `maxLeads`, por un objetivo o por cancelación).

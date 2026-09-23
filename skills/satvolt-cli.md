@@ -45,7 +45,7 @@ La entrega por sectores (`--execution-mode`, `--sectors-in-flight`, `campaigns f
   - `estimatedCreditsPerLead` al crear es el máximo, como si todos los leads pasaran todos los pasos; los filtros (QUALIFY) lo reducen. El consumo real por lead lo da `campaigns usage` (`avgCreditsPerLead`); para estimar una campaña nueva, usa el de una campaña anterior con la misma configuración.
   - **Techo por campaña:** toda campaña nueva se limita a 100.000 créditos y se pausa sola al llegar (`pauseReason: credit_limit`). Se consulta en `campaigns get` (`credits`) y se cambia con `campaigns credit-limit`. Cuenta lo cobrado más lo reservado por pasos asíncronos en vuelo.
 - **Objetivos:** además del techo, una campaña puede tener objetivos en `limits` (`completedLeads`, `annualKwh`, `roofAreaM2`; la lista la da `catalog campaign-limits` y puede crecer). Solo cuentan los leads `completed`. Al alcanzar uno, en modo `sectors` deja de admitir sectores y se cierra sola; en `full` se pausa (`pauseReason: limit_reached`). Se fijan con `--limit key=valor` al crear o con `campaigns limits`.
-- **Entrega por sectores (`executionMode`):** las campañas nuevas de Maps van en `sectors`: un sector, sus leads terminados, y el siguiente, del centro hacia fuera, con `sectorsInFlight` a la vez (2 de serie, 1–20). `full` es el barrido completo de antes: todos los sectores y todos los leads a la vez; lo conservan las campañas anteriores y lo usan siempre las de Excel y las copiadas de otra campaña. Se pasa de `sectors` a `full` con `campaigns full-sweep`; al revés no.
+- **Entrega por sectores (`executionMode`):** las campañas nuevas de Maps van en `sectors`: un sector, sus leads terminados, y el siguiente, del centro hacia fuera, con `sectorsInFlight` a la vez (2 de serie, 1–20), y los leads de cada sector en tandas de `leadBatchSize` (25 de serie, 1–500). `full` es el barrido completo de antes: todos los sectores y todos los leads a la vez; lo conservan las campañas anteriores y lo usan siempre las de Excel y las copiadas de otra campaña. Se pasa de `sectors` a `full` con `campaigns full-sweep`; al revés no.
 - **Pasos asíncronos:** si no llega su webhook, caducan a las 2 h (AI_AGENT, QUALIFY) o a las 24 h (el resto; en modo `sectors`, también 2 h), o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` sin cobrar el paso.
 - **Estados:** consulta `catalog states`.
   - Campaña: `queued` → `inProgress` → `completed`, `failed`, `paused` o `canceled`. `paused` se reanuda con `unpause` (sigue por donde iba); `canceled` es definitivo pero conserva los leads. La pausa puede ser manual, del techo de créditos o de un objetivo alcanzado (`pauseReason`: `manual`, `credit_limit`, `limit_reached`).
@@ -71,9 +71,9 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `templates list [--search t]` | Lista las plantillas |
 | `templates get <id\|nombre>` | Detalle con pasos y config |
 | `templates create --name N --from-campaign <id> [--description t]` | Guarda como plantilla la configuración de una campaña de Maps |
-| `templates create --name N --steps @steps.json [--business-groups ids] [--max-leads n] [--search-query t] [--configuration-description t] [--execution-mode sectors\|full] [--sectors-in-flight n] [--limit clave=valor ...]` | Crea una plantilla desde JSON |
+| `templates create --name N --steps @steps.json [--business-groups ids] [--max-leads n] [--search-query t] [--configuration-description t] [--execution-mode sectors\|full] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ...]` | Crea una plantilla desde JSON |
 | `templates update <id\|nombre> --data @t.json` | PUT: la sustituye entera (los pasos son obligatorios) |
-| `templates patch <id\|nombre> [--name] [--description] [--steps @parches] [--business-groups ids] [--max-leads n \| --no-max-leads] [--search-query t] [--execution-mode m] [--sectors-in-flight n] [--limit clave=valor ... \| --no-limits]` | Cambios sueltos; los pasos se modifican con parches por uid. `--limit` sustituye todos los objetivos de la plantilla |
+| `templates patch <id\|nombre> [--name] [--description] [--steps @parches] [--business-groups ids] [--max-leads n \| --no-max-leads] [--search-query t] [--execution-mode m] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ... \| --no-limits]` | Cambios sueltos; los pasos se modifican con parches por uid. `--limit` sustituye todos los objetivos de la plantilla |
 | `templates delete <id\|nombre> --yes` | Borra la plantilla (las campañas creadas desde ella no cambian) |
 
 `TEMPLATE_NAME_TAKEN` (409) significa que ya existe una plantilla con ese nombre.
@@ -114,7 +114,7 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | Pipeline | `--steps @steps.json`, `--business-groups ids`, `--description t` |
 | Búsqueda | `--search-query t` (búsqueda por texto en vez de por cercanía), `--max-leads n` |
 | Límites | `--credit-limit n` / `--no-credit-limit`, `--limit completedLeads=200 --limit annualKwh=50000000` (repetible) |
-| Entrega | `--execution-mode sectors\|full` (por defecto `sectors`), `--sectors-in-flight N` (1–20, 2 por defecto) |
+| Entrega | `--execution-mode sectors\|full` (por defecto `sectors`), `--sectors-in-flight N` (1–20, 2 por defecto), `--lead-batch-size N` (1–500, 25 por defecto) |
 | Otros | `--address t`, `--region t`, `--start`, `--data @body.json` |
 
 La respuesta trae `campaign.idCampaign`, `configuration`, `estimatedCreditsPerLead`, `basedOn` y `warnings`.
