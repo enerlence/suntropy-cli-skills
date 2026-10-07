@@ -219,6 +219,23 @@ suntropy inventory kits assemble \
   --custom-asset <assetId>:12
 ```
 
+## Ficha técnica de un equipo (`technicalSheetDocumentURL`)
+
+Paneles, inversores, paneles de kit e inversores de kit guardan su ficha técnica (PDF) en el campo **`technicalSheetDocumentURL`**. Se lee y se actualiza con la CLI (verificado en dev el 7-oct-2026 con la 0.16.2):
+
+| Equipo | Leer | Actualizar | Id |
+|---|---|---|---|
+| Panel | `suntropy inventory panels get <id>` | `suntropy inventory panels update <id> --data '{"technicalSheetDocumentURL":"<url>"}'` | `solarPanelId` |
+| Inversor | `suntropy inventory inverters get <id>` | `suntropy inventory inverters update <id> --data '{"technicalSheetDocumentURL":"<url>"}'` | `idInverter` |
+| Panel de kit | `suntropy inventory kits panels get <id>` | `suntropy inventory kits panels update <id> --data '{"technicalSheetDocumentURL":"<url>"}'` | `idKitSolarPanel` |
+| Inversor de kit | `suntropy inventory kits inverters list --limit 500` y filtra por `idKitInverter` (no hay `get`) | `suntropy inventory kits inverters update <id> --data '{"technicalSheetDocumentURL":"<url>"}'` | `idKitInverter` |
+
+- **El `update` es parcial**: manda sólo `technicalSheetDocumentURL` y el resto del equipo no cambia.
+- ⚠️ **`inventory inverters list` devuelve la ficha siempre vacía** aunque esté guardada: léela con `get <id>`.
+- La URL que se guarda es la de un documento de Suntropy (`https://documents.enerlence.com/f/…/?dl=1`), como las que sube el usuario desde el inventario. Desde el sandbox de Alexandria se obtiene descargando el PDF al sandbox y pasándolo por `download_sandbox_file`. No guardes la URL del fabricante: cambian y caducan.
+- **Sólo actualiza equipos del propio cliente** (`clientUID` igual al de la cuenta). Los equipos del catálogo común (`clientUID: "root"`, p. ej. los de los kits de Suntropy) se leen, pero no se tocan.
+- **En un estudio con kit**, `solarPanel.solarPanelId` y `solarInverters[].idInverter` son los ids del **panel e inversor del kit** (`solarKit.kitSolarPanel.idKitSolarPanel` y `solarKit.kitInverter.idKitInverter`), no de un panel o inversor suelto del inventario: léelos y actualízalos con `inventory kits panels` / `inventory kits inverters`. Sin kit, son del inventario suelto (`inventory panels` / `inventory inverters`).
+
 ## Notas
 
 - Todos los comandos devuelven JSON con el elemento creado (incluido su ID)
