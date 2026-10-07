@@ -113,7 +113,7 @@ See [[inventory-create]] and [[inventory-create-kit]] for detailed guides.
 suntropy inventory <type> list [--limit 20] [--active-only]
 suntropy inventory <type> get <id>
 suntropy inventory <type> create --data '<json>'
-suntropy inventory <type> update <id> --data '<json>'
+suntropy inventory <type> update <id> --data '<json>'   # partial; e.g. '{"technicalSheetDocumentURL":"<url>"}' — datasheet: see [[inventory-create]] «Ficha técnica de un equipo»
 suntropy inventory <type> delete <id>
 ```
 
