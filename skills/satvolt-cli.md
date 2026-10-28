@@ -88,6 +88,7 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create` |
 | `campaigns excel-preview <file> [--sample n]` | Cabeceras y primeras filas de un Excel (primera hoja, cabeceras en la fila 1), para decidir el mapeo |
 | `campaigns excel-geocode-test <file> --columns h1,h2 [--sample n] [--region t]` | Geocodifica las primeras filas con esas columnas: comprueba que las direcciones resuelven antes de crear (una petición a Google por fila) |
+| `campaigns create-from-leads --name N (--company "Nombre \| dirección"… \| --leads @json) [--region t] [base \| --steps] [--no-geocode] [--credit-limit n] [--start]` | Crea una campaña con 1–25 empresas concretas (sin búsqueda en Maps). Sin `--start` queda en `leads_found`, lista para `leads run-step`. Sin coordenadas añade `GEOCODE_ADDRESS`. Ver `satvolt-named-leads` |
 | `campaigns create-from-excel <file> --name N --name-column h (--coordinates-column h \| --geocode-columns h1,h2) [--address-columns] [--phone-column] [--url-column] [--email-column] [--type-column] [--country t] [--mapping @json] [base] [--max-leads n] [--region t] [--start]` | Crea una campaña con las filas del Excel como leads (sin búsqueda en Maps); no se puede ampliar después |
 | `campaigns start <id>` | Arranca una campaña `queued` (gasta créditos) |
 | `campaigns logs <id> [--level error] [--since ts] [--follow]` | Logs de procesamiento (30 días, 5.000 entradas); `--follow` termina solo |
@@ -155,7 +156,8 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `leads list <id> [--name t] [--search t] [--state a,b] [--step uid\|ACCIÓN] [--step-status s] [--with-steps] [--limit/--offset/--page]` | Lista paginada con estado, `stateError`, última acción y veredictos de QUALIFY |
 | `leads get <id> <leadId> [--full-data [claves]]` | Detalle: estado de cada paso, historial y claves de fullData |
 | `leads full-data <id> <leadId> [--keys a,b] [--path a.b.c]` | Solo el fullData, o un valor concreto |
-| `leads run-step <id> <leadId> <uid\|ACCIÓN> [--continue] [--force]` | Ejecuta un paso en un lead |
+| `leads run-step <id> <leadId> <uid\|ACCIÓN> [--continue] [--force] [--wait [--timeout s]]` | Ejecuta un paso en un lead; con `--wait` espera a que termine y devuelve su estado y lo que escribió en fullData |
+| `leads add <id> (--company "Nombre \| dirección"… \| --leads @json)` | Añade 1–25 empresas a una campaña existente (lead inbound) sin lanzar nada |
 | `leads fields <id> [--sample n] [--step uid\|ACCIÓN] [--search t]` | Campos para columnas de exportación por paso (igual que `export-tables fields`) |
 
 `--step-status` admite `reached` (por defecto), `success`, `failure`, `skipped`, `processing` o `pending`.
