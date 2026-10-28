@@ -30,7 +30,7 @@ LeadGen (Satvolt) no está activo en todas las cuentas: desde el 20 de octubre d
 suntropy satvolt templates list --format human
 ```
 
-Si responde `SATVOLT_NOT_ENABLED` (401, «This client does not have Satvolt enabled»), la cuenta no tiene LeadGen. Cualquier otro error no significa eso: trátalo como un fallo normal (ver «Errores»).
+Si responde `SATVOLT_NOT_ENABLED` (401, «This client does not have Satvolt enabled»), la cuenta no tiene LeadGen. En una cuenta recién creada, hoy la respuesta puede ser `ACCESS_CHECK_UNAVAILABLE` (503, «try again later»): Satvolt aún no conoce el cliente. Trátalo igual, como cuenta sin acceso, y no reintentes en bucle. Cualquier otro error no significa eso: trátalo como un fallo normal (ver «Errores»).
 
 **Si no lo tiene:**
 - **Para ahí.** No lances más comandos `satvolt`.
@@ -39,6 +39,7 @@ Si responde `SATVOLT_NOT_ENABLED` (401, «This client does not have Satvolt enab
   - Que lo pida en https://www.suntropy.ai/leadgen/#acceso con el email de su cuenta de Suntropy.
   - Que la activación trae 2.000 créditos de LeadGen de regalo.
   - Qué podrá sacar de lo que ha pedido en cuanto esté activo.
+- **El usuario aprueba siempre el alta y el acceso.** No completes un alta ni concedas permisos en su nombre sin preguntarle, y nunca le pidas ni escribas su contraseña o sus códigos de verificación.
 - **Si te lo permite, puedes enviar tú la solicitud** con su email y su teléfono. Pídele antes los dos datos y su permiso:
 
   ```bash

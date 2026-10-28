@@ -41,6 +41,9 @@ suntropy auth set-key --key <jwt-api-key>
 suntropy auth status
 ```
 
+
+**Credentials are the user's.** Ask the user before completing a signup, requesting access or granting permissions on their behalf, and never ask for, type or store their password or verification codes. Agents authenticate with an API key the user creates for them (`suntropy auth set-key`, or `SUNTROPY_API_KEY`); `auth login` is for people at their own terminal.
+
 ## Workflows
 
 This skill includes detailed guides for the main workflows:
