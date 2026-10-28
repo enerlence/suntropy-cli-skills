@@ -37,12 +37,17 @@ cp -r skills .agents/skills/suntropy-cli
 ## Authentication
 
 ```bash
-suntropy auth set-key --key <jwt-api-key>
-suntropy auth status
+suntropy auth login --web --format json   # agents: hand verification_uri_complete + user_code to the user, who approves in the browser
+suntropy auth status                      # with a v2 key: label, scopes, clientUID
+suntropy auth set-key --key <key>         # alternative: a key the user created in Settings (sun_… for API v2, or a legacy JWT key)
 ```
 
+`auth login --web` (CLI 0.18.0+) is a device login: the CLI prints a URL and a code, the user opens it with their Suntropy session and approves (only an admin of the team can), and the CLI receives an API v2 key (`sun_…`) named `CLI · <device> · <date>`, revocable from Settings. It works in sandboxes and CI: nothing listens locally. With `--format json` the first line is `{ verification_uri, verification_uri_complete, user_code, expires_in }` (give it to the user right away) and the last one `{ status: "approved" | "denied" | "expired" | "error", … }`.
 
-**Credentials are the user's.** Ask the user before completing a signup, requesting access or granting permissions on their behalf, and never ask for, type or store their password or verification codes. Agents authenticate with an API key the user creates for them (`suntropy auth set-key`, or `SUNTROPY_API_KEY`); `auth login` is for people at their own terminal.
+A `sun_` key only works with `suntropy satvolt …` (LeadGen and credits) and `auth status` for now; any other command answers `V2_KEY_NOT_SUPPORTED` and needs `suntropy auth login` (a person's session) or a legacy key.
+
+
+**Credentials are the user's.** Ask the user before completing a signup, requesting access or granting permissions on their behalf, and never ask for, type or store their password or verification codes. Agents authenticate with `suntropy auth login --web` (the user approves in their browser) or with an API key the user creates for them (`suntropy auth set-key`, or `SUNTROPY_API_KEY`); `auth login` with email and password is for people at their own terminal.
 
 ## Workflows
 
@@ -240,7 +245,7 @@ suntropy notifications send --to-user <userUID> --as-alexandria --mention \
 
 ### Satvolt (`suntropy satvolt`)
 
-Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
+Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). With a session token or legacy key it calls `<server>/satvolt/api/v1` (`localhost:8099` locally); with a `sun_` key, the API v2 gateway (`https://api.suntropy.ai/api/v2/leadgen`). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
 
 ```bash
 suntropy satvolt templates create --name "Industria" --from-campaign 62
@@ -252,6 +257,8 @@ suntropy satvolt leads list <id> --step QUALIFY --step-status failure
 suntropy satvolt leads run-step <id> <leadId> ESTIMATE_CONSUMPTION
 suntropy satvolt campaigns extend <id> --max-leads 500        # more leads without relaunching
 suntropy satvolt campaigns usage <id> --format human            # credits consumed
+suntropy satvolt credits balance                                # credits available
+suntropy satvolt credits checkout <packId>                      # Stripe Checkout URL for the USER to pay; agents never pay
 suntropy satvolt export-tables export <tableId> --file-format xlsx --out leads.xlsx
 ```
 

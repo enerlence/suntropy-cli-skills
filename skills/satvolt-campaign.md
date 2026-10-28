@@ -1,4 +1,4 @@
-Crea, configura y explota una campaña de Satvolt (captación de leads B2B desde Google Maps con un pipeline de enriquecimiento) usando `suntropy satvolt`. Todo lo que aquí se hace es lo mismo que permite la web de Satvolt; la CLI habla con la API pública `/satvolt/api/v1` con el mismo token de `suntropy auth`.
+Crea, configura y explota una campaña de Satvolt (captación de leads B2B desde Google Maps con un pipeline de enriquecimiento) usando `suntropy satvolt`. Todo lo que aquí se hace es lo mismo que permite la web de Satvolt; la CLI habla con la API pública de Satvolt con la credencial de `suntropy auth` (ver «Conexión» en `satvolt-cli`).
 
 Cada acción del pipeline gasta créditos por lead. Habla siempre en créditos, nunca en euros: el precio del crédito depende de cada cliente y no lo conoces. Antes de arrancar o reanudar una campaña, enseña al usuario el coste estimado y pide confirmación.
 
@@ -30,7 +30,7 @@ LeadGen (Satvolt) no está activo en todas las cuentas: desde el 20 de octubre d
 suntropy satvolt templates list --format human
 ```
 
-Si responde `SATVOLT_NOT_ENABLED` (401, «This client does not have Satvolt enabled»), la cuenta no tiene LeadGen. En una cuenta recién creada, hoy la respuesta puede ser `ACCESS_CHECK_UNAVAILABLE` (503, «try again later»): Satvolt aún no conoce el cliente. Trátalo igual, como cuenta sin acceso, y no reintentes en bucle. Cualquier otro error no significa eso: trátalo como un fallo normal (ver «Errores»).
+Si responde `SATVOLT_NOT_ENABLED` (401, «This client does not have Satvolt enabled»), la cuenta no tiene LeadGen. Cualquier otro error no significa eso: trátalo como un fallo normal (ver «Errores»).
 
 **Si no lo tiene:**
 - **Para ahí.** No lances más comandos `satvolt`.
@@ -214,7 +214,7 @@ suntropy satvolt campaigns get <campaignId> --format human              # "Secto
 
 En modo `sectors`, `campaigns get` da `sectorProgress`: sectores terminados, en curso y esperando turno. Revisa los leads del primer sector antes de que avance mucho: hace de canario, y un agente mal configurado se ve en unos pocos leads en lugar de en cientos.
 
-**Si la sesión caduca mientras sigues una campaña** (401 `TOKEN_EXPIRED`), la campaña no se ha parado: sigue en Satvolt. Renueva el token (`suntropy auth refresh`, o `auth login` si ya no se puede renovar), repite `campaigns get` y continúa. Con una API key de cuenta (`auth set-key`) no pasa: no caduca en el día.
+**Si la sesión caduca mientras sigues una campaña** (401 `TOKEN_EXPIRED`), la campaña no se ha parado: sigue en Satvolt. Renueva el token (`suntropy auth refresh`, o `auth login` si ya no se puede renovar), repite `campaigns get` y continúa. Con una clave de `auth login --web` o una API key de cuenta (`auth set-key`) no pasa: no caduca en el día. Si una clave `sun_` responde 401 `INVALID_KEY`, el usuario la ha revocado: pídele que apruebe un `suntropy auth login --web` nuevo.
 
 Un paso asíncrono (QUALIFY, AI_AGENT, CUSTOM_WEBHOOK…) que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY, a las 24 h en el resto (2 h todos en modo `sectors`), o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` y el paso no se cobra. Ver `satvolt-lead-troubleshooting`.
 
@@ -514,4 +514,7 @@ Los errores salen por stderr como `{ error, status, message, details }`:
 | 409 `LIMIT_REACHED` | la campaña alcanzó un objetivo: `unpause`, `extend` y `full-sweep` no se ejecutan hasta subirlo o quitarlo con `campaigns limits`. `details.limits` dice cuál. |
 | 409 `INVALID_EXECUTION_MODE` | `full-sweep` sobre una campaña que ya está en barrido completo. |
 | 409 `PENDING_STEP`, `STEP_NOT_RUNNABLE` | no se puede reanudar; `message` explica por qué. |
+| 409 `INSUFFICIENT_CREDITS` | la empresa no tiene saldo (`details.available`). Enséñale al usuario `suntropy satvolt credits packs`, dale la URL de `credits checkout <packId>` del pack que elija **para que pague él** (nunca pagues tú) y, cuando confirme, comprueba `credits balance` y repite el comando. |
+| 409 `MONTHLY_SPEND_LIMIT_REACHED` | la empresa llegó a su límite de gasto mensual: lo sube el usuario desde la web. |
 | 401 `TOKEN_EXPIRED` | renueva el token con `suntropy auth refresh`. |
+| 401 `INVALID_KEY` | la clave `sun_` está revocada o caducada: pídele al usuario que apruebe un `suntropy auth login --web` nuevo. |
