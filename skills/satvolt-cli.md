@@ -239,3 +239,4 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `INVALID_KEY` (401) | La clave `sun_` está revocada o caducada: vuelve a `suntropy auth login --web` |
 | `INSUFFICIENT_SCOPE` (403) | A la clave le falta el permiso que dice `message`: un login nuevo con `--scopes` |
 | `V2_KEY_NOT_SUPPORTED` | Ese comando aún no funciona con una clave `sun_`: necesita `suntropy auth login` |
+| `V1_AUTH_NOT_SUPPORTED` | Ese comando sólo existe en la API v2 y no funciona con sesión ni con API key antigua: `suntropy auth login --web` |
