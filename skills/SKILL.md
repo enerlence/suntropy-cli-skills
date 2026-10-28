@@ -1,6 +1,6 @@
 ---
 name: suntropy-cli
-description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar platform. Use when creating solar studies, managing inventory, calculating production, or automating solar energy workflows via command line."
+description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar platform. Use when creating solar studies, managing inventory, calculating production, running Satvolt lead-generation campaigns, analysing specific companies by name with Satvolt (an inbound lead, 1-10 named companies), or automating solar energy workflows via command line."
 ---
 
 # @enerlence/suntropy-cli
@@ -45,7 +45,8 @@ This skill includes detailed guides for the main workflows:
 - [[inventory-create]] — Create inventory items: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers.
 - [[inventory-create-kit]] — Create and assemble solar kits, EV charger kits, and heat pump kits with components and custom assets.
 - [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.
-- [[satvolt-campaign]] — Create, configure, follow and export Satvolt lead-generation campaigns (Google Maps + enrichment pipeline).
+- [[satvolt-named-leads]] — **Read it first whenever the user names specific companies (1-10, e.g. an inbound lead or "analyse Geesol in Camas: does it have panels?") instead of an area, radius or municipality.** Creates a campaign with just those companies and runs the steps one by one on each lead, reading each result before the next; never launches the whole campaign.
+- [[satvolt-campaign]] — Create, configure, follow and export Satvolt lead-generation campaigns over an area (Google Maps + enrichment pipeline). For specific named companies, use [[satvolt-named-leads]] instead.
 - [[satvolt-probe-to-full-campaign]] — Launch a probe campaign from a template, validate its data, fix the pipeline without relaunching and extend it to the whole area.
 - [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
 - [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
@@ -232,7 +233,7 @@ suntropy notifications send --to-user <userUID> --as-alexandria --mention \
 
 ### Satvolt (`suntropy satvolt`)
 
-Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
+Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). Uses the same token; calls `<server>/satvolt/api/v1` (`localhost:8099` locally). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step` (with [[satvolt-named-leads]], one confirmation of the whole plan covers its `run-step` calls).
 
 ```bash
 suntropy satvolt templates create --name "Industria" --from-campaign 62

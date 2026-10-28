@@ -6,6 +6,8 @@ Toda campaña nueva nace con un techo de **100.000 créditos**: al alcanzarlo se
 
 Las campañas nuevas de Maps van **por sectores**: buscan un sector, terminan sus leads y pasan al siguiente, del centro del área hacia fuera. Si se paran, dejan leads terminados y no cientos a medias. Ver [Entrega por sectores](#entrega-por-sectores-y-barrido-completo). Si el usuario expresa su meta en leads, kWh o m², ponle un **objetivo**: la campaña se cierra sola al alcanzarlo. Ver [Objetivos](#objetivos-de-campaña).
 
+> **¿Empresas concretas en vez de una zona?** Si el usuario da nombres de empresas (de 1 a 10: un lead inbound, «analiza Geesol», «¿estas tres naves tienen paneles?») y no un área, un radio o un municipio, este no es tu flujo: sigue `satvolt-named-leads`, que crea la campaña solo con esas empresas y ejecuta los pasos uno a uno.
+
 ## Parámetros de entrada
 
 | Parámetro | Obligatorio | Default |

@@ -2,6 +2,8 @@ Lanza una campaña de Satvolt en dos fases: primero una sonda con pocos leads pa
 
 Ten a mano `satvolt-cli` para las opciones y `satvolt-lead-troubleshooting` si algo falla.
 
+> **¿Empresas concretas en vez de una zona?** Si el usuario da nombres de empresas (de 1 a 10: un lead inbound, «analiza Geesol», «¿estas tres naves tienen paneles?») y no un área, un radio o un municipio, este no es tu flujo: sigue `satvolt-named-leads`, que crea la campaña solo con esas empresas y ejecuta los pasos uno a uno.
+
 ## Parámetros de entrada
 
 | Parámetro | Obligatorio | Default |
