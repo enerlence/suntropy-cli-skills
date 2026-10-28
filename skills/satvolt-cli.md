@@ -40,8 +40,10 @@ La entrega por sectores (`--execution-mode`, `--sectors-in-flight`, `campaigns f
   - `catalog actions` da de cada acción los créditos por lead, las dependencias, si admite repetirse (`multiple`) y el JSON Schema de su `config`.
   - Los valores `default` se rellenan solos. Las dependencias que falten se añaden y se avisa en `warnings`.
 - **Créditos:** la unidad de gasto es el crédito. No conviertas créditos a euros: el precio del crédito depende de cada cliente y Alexandria no lo conoce.
-  - Cada acción cobra un precio fijo por lead (`creditCost` en `catalog actions` o `steps list`). Todos los agentes de AI_AGENT cuestan lo mismo.
+  - Cada acción cobra un precio fijo por lead (`creditCost` en `catalog actions` o `steps list`).
+  - AI_AGENT cobra según el agente: cada uno trae su `creditCost` en `catalog ai-agents`, y `steps list` muestra el del agente configurado. El `creditCost` de AI_AGENT en `catalog actions` es el de un agente sin precio propio.
   - Las ejecuciones fallidas o saltadas (`skipped`) no cobran.
+  - Un agente que termina sin el dato que se paga (sin URL de LinkedIn, sin CIF, sin decisor) queda como `unsatisfied` («completado sin resultado») y cobra su tarifa reducida (`unsatisfiedCreditCost` en `catalog ai-agents`; hoy 30→5, 20→5 y 40→10). El lead sigue el pipeline, y el paso cuenta como resuelto. Qué dato decide el éxito lo fija el servidor por agente, no el `successIf` del paso.
   - `estimatedCreditsPerLead` al crear es el máximo, como si todos los leads pasaran todos los pasos; los filtros (QUALIFY) lo reducen. El consumo real por lead lo da `campaigns usage` (`avgCreditsPerLead`); para estimar una campaña nueva, usa el de una campaña anterior con la misma configuración.
   - **Techo por campaña:** toda campaña nueva se limita a 100.000 créditos y se pausa sola al llegar (`pauseReason: credit_limit`). Se consulta en `campaigns get` (`credits`) y se cambia con `campaigns credit-limit`. Cuenta lo cobrado más lo reservado por pasos asíncronos en vuelo.
 - **Objetivos:** además del techo, una campaña puede tener objetivos en `limits` (`completedLeads`, `annualKwh`, `roofAreaM2`; la lista la da `catalog campaign-limits` y puede crecer). Solo cuentan los leads `completed`. Al alcanzar uno, en modo `sectors` deja de admitir sectores y se cierra sola; en `full` se pausa (`pauseReason: limit_reached`). Se fijan con `--limit key=valor` al crear o con `campaigns limits`.
@@ -57,7 +59,7 @@ La entrega por sectores (`--execution-mode`, `--sectors-in-flight`, `campaigns f
 | Comando | Devuelve |
 |---|---|
 | `catalog actions` | Acciones LEAD: `creditCost`, `isAsync`, `multiple`, `dependencies`, `resultsPropertyKeys`, `configSchema` |
-| `catalog ai-agents` | Agentes válidos para `AI_AGENT.config.agentId` |
+| `catalog ai-agents` | Agentes válidos para `AI_AGENT.config.agentId`, con sus créditos por ejecución (`creditCost`) y los de una ejecución sin resultado (`unsatisfiedCreditCost`, `null` si no tiene) |
 | `catalog business-groups` | Grupos de negocio para `--business-groups` (`businesses` = solo negocios) |
 | `catalog states` | Estados de campaña y de lead |
 | `catalog campaign-limits` | Métricas que admiten objetivo: `key`, `unit`, `description`, `integer` |
@@ -91,14 +93,14 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | `campaigns create-from-excel <file> --name N --name-column h (--coordinates-column h \| --geocode-columns h1,h2) [--address-columns] [--phone-column] [--url-column] [--email-column] [--type-column] [--country t] [--mapping @json] [base] [--max-leads n] [--region t] [--start]` | Crea una campaña con las filas del Excel como leads (sin búsqueda en Maps); no se puede ampliar después |
 | `campaigns start <id>` | Arranca una campaña `queued` (gasta créditos) |
 | `campaigns logs <id> [--level error] [--since ts] [--follow]` | Logs de procesamiento (30 días, 5.000 entradas); `--follow` termina solo |
-| `campaigns funnel <id>` | Por paso (`steps[]` con `uid`, `action`, `name`, `reached`, `success`, `failure`, `skipped`, `processing`, `pending`), más `leadStates` |
+| `campaigns funnel <id>` | Por paso (`steps[]` con `uid`, `action`, `name`, `reached`, `success`, `unsatisfied`, `failure`, `skipped`, `processing`, `pending`), más `leadStates` |
 | `campaigns pause <id>` | Pausa una campaña en marcha: retira lo pendiente, lo que está en vuelo termina sin encolar más y deja de gastar |
 | `campaigns unpause <id>` | Reanuda una campaña `paused` por donde iba, sin repetir ni volver a cobrar pasos ya ejecutados |
 | `campaigns credit-limit <id> <créditos> \| --off --yes` | Fija o quita el techo de gasto de la campaña. Subirlo no reanuda: después, `unpause` |
 | `campaigns limits <id> [key=valor\|key=off ...]` | Sin pares, muestra los objetivos con lo que llevan; con pares, los fija (`completedLeads=300`) o los quita (`annualKwh=off`). Subir o quitar un objetivo no reanuda: después, `unpause` |
 | `campaigns full-sweep <id> --yes` | Pasa una campaña en `sectors` a barrido completo (irreversible): busca ya todos los sectores que esperaban y pone sus leads en vuelo. Sin `--yes` explica qué hará y sale |
 | `campaigns cancel <id> --yes` | Cancela sin vuelta atrás una campaña en marcha, pausada o en cola; conserva leads y datos (exportables) |
-| `campaigns usage <id> [--by-lead]` | Créditos cobrados por la campaña (regla de la pestaña Usage; no cuenta la búsqueda en Maps) |
+| `campaigns usage <id> [--by-lead]` | Créditos cobrados por la campaña, re-ejecuciones incluidas (igual que `credits.spent`); por paso, `reruns` y `unsatisfied`. No cuenta la búsqueda en Maps |
 | `usage [--month YYYY-MM]` | Créditos gastados por toda la cuenta en un mes (por defecto el actual): total, mes anterior, por campaña y por paso. Incluye la búsqueda en Maps, así que no tiene por qué cuadrar con `campaigns usage`. Es `satvolt usage`, no `campaigns usage` |
 | `campaigns extend <id> --max-leads N \| --no-limit` | Más leads sin relanzar: solo busca en los sectores pendientes |
 | `campaigns resume <id> --action A [--config json]` | Añade un paso al final y lo ejecuta sobre los leads existentes |
@@ -158,7 +160,7 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `leads run-step <id> <leadId> <uid\|ACCIÓN> [--continue] [--force]` | Ejecuta un paso en un lead |
 | `leads fields <id> [--sample n] [--step uid\|ACCIÓN] [--search t]` | Campos para columnas de exportación por paso (igual que `export-tables fields`) |
 
-`--step-status` admite `reached` (por defecto), `success`, `failure`, `skipped`, `processing` o `pending`.
+`--step-status` admite `reached` (por defecto), `success`, `unsatisfied`, `failure`, `skipped`, `processing` o `pending`.
 
 **`run-step`:**
 - Pasa por la misma cola que el pipeline y cobra los créditos del paso.
@@ -194,6 +196,7 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 - **Tipo por defecto:** sin `:tipo` o `--type`, la columna toma el tipo de la columna del lead o el que declara el paso para esa ruta (`annualKwh` → `number`); si no, `string`.
 - **`warnings`:** crear o editar columnas avisa con `UNKNOWN_FULLDATA_KEY` si ningún paso de la campaña escribe esa clave de `fullData` (errata, alias cambiado). La columna se guarda igualmente.
 - **Tablas entre campañas:** las campañas de una misma plantilla comparten uids, así que una tabla con `fullData.qualification_<uid>` se puede duplicar entre ellas.
+- **Al crear desde una base, las tablas se copian solas.** `campaigns create --template` copia a la nueva campaña las tablas de la campaña de origen de la plantilla, y `--from-campaign` las de esa campaña. Vienen en `exportTables` de la respuesta. Si la plantilla no tiene campaña de origen o esa campaña no tenía tablas, `exportTables` sale vacío y `warnings` lo dice: entonces créala con `export-tables create`. Si pasas `--steps`, revisa las columnas de `fullData.<clave>_<uid>`, que apuntan a los pasos de la base.
 
 ## Códigos de error frecuentes
 
