@@ -22,6 +22,33 @@ Las campañas nuevas de Maps van **por sectores**: buscan un sector, terminan su
 | Pasos del pipeline (acciones y su config) | No | los de la base; sin base, ninguno (solo descubre leads) |
 | Arrancar al crear | No | no (queda en cola) |
 
+## Antes de nada: comprueba que la cuenta tiene LeadGen
+
+LeadGen (Satvolt) no está activo en todas las cuentas: desde el 20 de octubre de 2026 se activa bajo solicitud. Compruébalo **antes de pedir zona o criterios**, para que el usuario no conteste a tus preguntas y acabe oyendo que no puede usarlo:
+
+```bash
+suntropy satvolt templates list --format human
+```
+
+Si responde `SATVOLT_NOT_ENABLED` (401, «This client does not have Satvolt enabled»), la cuenta no tiene LeadGen. En una cuenta recién creada, hoy la respuesta puede ser `ACCESS_CHECK_UNAVAILABLE` (503, «try again later»): Satvolt aún no conoce el cliente. Trátalo igual, como cuenta sin acceso, y no reintentes en bucle. Cualquier otro error no significa eso: trátalo como un fallo normal (ver «Errores»).
+
+**Si no lo tiene:**
+- **Para ahí.** No lances más comandos `satvolt`.
+- **Díselo en un único mensaje:**
+  - Que su cuenta todavía no tiene LeadGen activado y que se activa bajo solicitud.
+  - Que lo pida en https://www.suntropy.ai/leadgen/#acceso con el email de su cuenta de Suntropy.
+  - Que la activación trae 2.000 créditos de LeadGen de regalo.
+  - Qué podrá sacar de lo que ha pedido en cuanto esté activo.
+- **El usuario aprueba siempre el alta y el acceso.** No completes un alta ni concedas permisos en su nombre sin preguntarle, y nunca le pidas ni escribas su contraseña o sus códigos de verificación.
+- **Si te lo permite, puedes enviar tú la solicitud** con su email y su teléfono. Pídele antes los dos datos y su permiso:
+
+  ```bash
+  curl -s -X POST https://www.suntropy.ai/api/leadgen-acceso -H 'Content-Type: application/json' \
+    -d '{"email":"<email de la cuenta>","phone":"<teléfono>","utm_source":"ia-agente","utm_medium":"ia"}'
+  ```
+- **No prometas plazos:** lo activa una persona de Suntropy.
+- **Cuando diga que ya lo tiene**, repite `templates list` antes de seguir.
+
 ## Ejecución
 
 ### Paso 0: Catálogo
@@ -29,13 +56,31 @@ Las campañas nuevas de Maps van **por sectores**: buscan un sector, terminan su
 ```bash
 suntropy satvolt catalog actions            # acciones, créditos por lead, dependencias y JSON Schema de config
 suntropy satvolt catalog business-groups
-suntropy satvolt catalog ai-agents          # ids válidos para AI_AGENT config.agentId
+suntropy satvolt catalog ai-agents          # ids válidos para AI_AGENT config.agentId y sus créditos
 ```
 
 Reglas del catálogo:
 - `configSchema.required` son obligatorios en pasos activos; los `default` se rellenan solos.
 - Solo las acciones con `multiple: true` (QUALIFY, AI_AGENT, CUSTOM_WEBHOOK) pueden repetirse.
 - Si falta una dependencia (p. ej. ESTIMATE_CONSUMPTION necesita FIND_ROOFTOP), el backend la añade y lo avisa en `warnings`.
+
+### Paso 0b: Tipo de campaña, barrido por categoría o búsqueda por texto
+
+Decídelo con el primer mensaje del usuario, antes de proponer la zona: cambia la zona, cómo se estima y qué cuesta.
+
+| | **Barrido de zona por categoría** | **Búsqueda por actividad (texto)** |
+|---|---|---|
+| Qué pide el usuario | Un perfil amplio en una zona acotada: «naves industriales en el polígono de Guarnizo», «industria y logística en Getafe», «hoteles en Benidorm» | Todas las empresas de **una actividad concreta**, en una zona que puede ser grande: «todas las gestorías de Madrid», «instaladores de climatización en Sevilla» |
+| Cómo busca | Por tipos de Google (`--business-groups`) | Por texto (`--search-query "<actividad>"`), como quien lo escribe en Google Maps |
+| Zona típica | Polígono, municipio o comarca: círculo de 1-10 km | Municipio, provincia o comunidad: rectángulo |
+| Qué cuesta la búsqueda | Por **área**: hay que peinar cada km² aunque esté vacío | Por **resultados**: crece con lo que encuentra, no con el área |
+| Dónde falla | Zonas grandes: barrer una provincia por cercanía es carísimo | Términos genéricos («industria», «empresa», «manufactura»): Google casa por nombre y actividad, no por sector |
+
+- **Texto:** una actividad o profesión que un cliente escribiría en Google Maps (gestoría, taller de chapa, clínica dental), «todas las…», una provincia o más, o un nombre o una marca («Mercadona»).
+- **Barrido:** un sector amplio o un rasgo físico (industria, logística, naves, grandes cubiertas, polígono), o una zona pequeña.
+- **Dudoso** (actividad concreta en zona pequeña): estima las dos variantes y quédate con la muestra más limpia. Al usuario le preguntas qué busca; el tipo lo decides tú y le dices por qué en una frase.
+- **Una campaña lleva una sola consulta.** Si dos términos cubren negocios distintos, propón una segunda campaña.
+- **En una zona grande, una búsqueda por texto puede traer miles de leads:** la búsqueda sale barata, pero cada lead paga el pipeline. Calcula el máximo, acuerda límites y pon los pasos caros detrás de QUALIFY.
 
 ### Paso 1: Pasos del pipeline
 
@@ -56,6 +101,15 @@ EOF
 ```
 
 ESTIMATE_CONSUMPTION usa la superficie construida del Catastro, el código postal y, si se le pasa, el CNAE. Sin CNAE la confianza no pasa de "media" y la estimación anual de los fabricantes sale muy por debajo. Colócalo después del paso que obtiene el CNAE y referencia su salida en `cnaeTemplate`.
+
+#### El país de la zona decide los pasos
+
+- **España:** los pasos de esta skill. No uses los `FR_…`: fuera de Francia no encuentran nada.
+- **Francia** (coordenadas o dirección en Francia, código postal francés, o piden SIRET, SIREN, NAF o APE): la empresa sale de `FR_COMPANY_REGISTRY` y el consumo de `FR_ELECTRICITY_CONSUMPTION`. No uses el agente de CIF, `ESTIMATE_CONSUMPTION`, `CHECK_GRID_ACCESS`, `ROOFTOP_LIDAR` ni `GET_FINANCIAL_DATA`, ni los objetivos `annualKwh` y `roofAreaM2`. El detalle está en `satvolt-france`.
+- **Otros países:** no hay pasos de empresa ni de consumo. Antes de crear nada, di qué se puede sacar (negocios de Google y agentes) y qué no.
+- **Una campaña, un país.** Si la zona mezcla dos, propón una por país.
+
+**Para la cubierta, `FIND_ROOFTOP`, nunca `ROOFTOP_LIDAR`.** El LiDAR no está disponible, aunque `catalog actions` lo liste. Si una plantilla o una campaña base lo trae, quítalo con `steps remove` y comprueba que `FIND_ROOFTOP` sigue en el pipeline.
 
 #### AI_AGENT: el agente solo sabe lo que le manda la plantilla
 
@@ -160,6 +214,8 @@ suntropy satvolt campaigns get <campaignId> --format human              # "Secto
 
 En modo `sectors`, `campaigns get` da `sectorProgress`: sectores terminados, en curso y esperando turno. Revisa los leads del primer sector antes de que avance mucho: hace de canario, y un agente mal configurado se ve en unos pocos leads en lugar de en cientos.
 
+**Si la sesión caduca mientras sigues una campaña** (401 `TOKEN_EXPIRED`), la campaña no se ha parado: sigue en Satvolt. Renueva el token (`suntropy auth refresh`, o `auth login` si ya no se puede renovar), repite `campaigns get` y continúa. Con una API key de cuenta (`auth set-key`) no pasa: no caduca en el día.
+
 Un paso asíncrono (QUALIFY, AI_AGENT, CUSTOM_WEBHOOK…) que no recibe su webhook caduca: a las 2 h en AI_AGENT y QUALIFY, a las 24 h en el resto (2 h todos en modo `sectors`), o a los `asyncTimeoutMinutes` de su `config`. El lead pasa a `failed` y el paso no se cobra. Ver `satvolt-lead-troubleshooting`.
 
 **Ejecutar ≠ acertar.** Un agente puede terminar sin error respondiendo que no encontró
@@ -190,7 +246,7 @@ suntropy satvolt leads get <campaignId> <leadId> --full-data consumptionEstimate
 suntropy satvolt leads full-data <campaignId> <leadId> --path cif.response.extras.cnae
 ```
 
-`--step-status`: `reached` (por defecto), `success`, `failure`, `skipped`, `processing` o `pending`.
+`--step-status`: `reached` (por defecto), `success`, `unsatisfied` (el agente terminó sin su dato y cobró la tarifa reducida), `failure`, `skipped`, `processing` o `pending`.
 
 ### Paso 5: Tabla de exportación
 
@@ -251,13 +307,13 @@ suntropy satvolt config update <campaignId> --data @pipeline.json
 Para añadir una acción a una campaña terminada sin reprocesarla, usa `resume`. Añade el paso al final y lo lanza sobre los leads que llegaron al paso anterior:
 
 ```bash
-suntropy satvolt catalog ai-agents --format human     # id, nombre y descripción de cada agente
+suntropy satvolt catalog ai-agents --format human     # id, nombre, descripción y créditos de cada agente
 suntropy satvolt campaigns funnel <campaignId>         # leads que llegaron al último paso: los que pagarán el nuevo
 suntropy satvolt campaigns resume <campaignId> --action AI_AGENT \
   --config '{"customName":"Web corporativa","agentId":"<id>","outputKey":"web","messageTemplate":"Empresa: {{lead.commercialName}}\nWeb: {{lead.url}}\nDirección: {{lead.address}}"}'
 ```
 
-`--config` es solo el objeto de configuración del paso (el `configSchema` de `catalog actions`), no `{ action, config }`. Coste ≈ leads que llegaron al último paso × `creditCost` de la acción.
+`--config` es solo el objeto de configuración del paso (el `configSchema` de `catalog actions`), no `{ action, config }`. Coste ≈ leads que llegaron al último paso × `creditCost` de la acción (en AI_AGENT, el del agente; los leads en que no encuentre su dato pagan `unsatisfiedCreditCost`).
 
 Si el `agentId` sale de una variable de shell, no lo metas entre comillas simples (no se expande); usa un fichero:
 
