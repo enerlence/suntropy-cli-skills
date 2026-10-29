@@ -2,19 +2,25 @@ Referencia de `suntropy satvolt`, los comandos de la CLI de Suntropy para las ca
 
 ## Conexión
 
-`suntropy satvolt` llama a la API pública de Satvolt con el mismo token que el resto de la CLI.
+`suntropy satvolt` llama a la API pública de Satvolt. Adónde va depende de la credencial:
 
-| Entorno | `--server` (o perfil) | URL a la que llama |
-|---|---|---|
-| Producción | `https://api.enerlence.com` | `https://api.enerlence.com/satvolt/api/v1` |
-| Local | `http://localhost` | `http://localhost:8099/api/v1` (el puerto del servidor se ignora) |
+| Credencial | URL a la que llama |
+|---|---|
+| Clave de la API v2 (`sun_…`, de `auth login --web` o creada en Configuración) | `https://api.suntropy.ai/api/v2/leadgen` (dev: `https://api-dev.enerlence.com/api/v2/leadgen`; `SUNTROPY_GATEWAY_URL` la cambia) |
+| Sesión (`auth login`) o API key antigua (JWT) | `https://api.enerlence.com/satvolt/api/v1` |
+| Local | `http://localhost:8099/api/v1` (el puerto del servidor se ignora; `SUNTROPY_SATVOLT_URL` la cambia) |
 
 ```bash
-suntropy auth set-key --key <jwt>            # o SUNTROPY_API_KEY=<jwt>, o --token <jwt>
-suntropy --profile dev satvolt campaigns list
+suntropy auth login --web --format json      # el usuario aprueba en el navegador; la CLI guarda una clave sun_
+suntropy auth set-key --key <clave>          # o SUNTROPY_API_KEY=<clave>, o --token <clave>
+suntropy satvolt campaigns list
 ```
 
-El token es un JWT con `clientUID`. Todo queda acotado a la empresa del token. Con `401 TOKEN_EXPIRED` hay que renovar el token.
+- **Login por navegador** (CLI 0.18.0+): la primera línea de `--format json` es `{ verification_uri, verification_uri_complete, user_code, expires_in }`. Pásale al usuario la URL y el código en ese momento: la CLI espera (10 min como mucho) a que lo apruebe. Sólo puede aprobar un administrador de su equipo. La última línea es `{ status: "approved", label, clientUID, scopes }`, o `denied`, `expired` o `error`, con código de salida ≠ 0. Nunca pidas ni escribas la contraseña del usuario.
+- **Clave `sun_`:** no caduca en el día y el usuario la revoca desde Configuración. Permisos por defecto: `leadgen:read`, `leadgen:write` y `credits:read`. `auth status` dice su nombre y sus permisos. Con ella, los comandos que no son `satvolt` responden `V2_KEY_NOT_SUPPORTED`.
+- **Sesión o clave antigua:** el token es un JWT con `clientUID`. Con `401 TOKEN_EXPIRED` hay que renovarlo.
+
+Todo queda acotado a la empresa de la credencial.
 
 La entrega por sectores (`--execution-mode`, `--sectors-in-flight`, `campaigns full-sweep`) y los objetivos (`--limit`, `campaigns limits`, `catalog campaign-limits`) necesitan la CLI 0.16.0 o posterior.
 
@@ -198,6 +204,18 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 - **Tablas entre campañas:** las campañas de una misma plantilla comparten uids, así que una tabla con `fullData.qualification_<uid>` se puede duplicar entre ellas.
 - **Al crear desde una base, las tablas se copian solas.** `campaigns create --template` copia a la nueva campaña las tablas de la campaña de origen de la plantilla, y `--from-campaign` las de esa campaña. Vienen en `exportTables` de la respuesta. Si la plantilla no tiene campaña de origen o esa campaña no tenía tablas, `exportTables` sale vacío y `warnings` lo dice: entonces créala con `export-tables create`. Si pasas `--steps`, revisa las columnas de `fullData.<clave>_<uid>`, que apuntan a los pasos de la base.
 
+## Créditos (`credits`)
+
+| Comando | Hace |
+|---|---|
+| `credits balance` | Saldo de la empresa: `balance`, `held` (reservado por pasos en vuelo), `available`, `month` y `autoRecharge` |
+| `credits packs` | Packs de compra: `id`, `credits`, `bonus`, `totalCredits`, `amount`, `currency`, `eurPerCredit` |
+| `credits checkout <packId>` | Devuelve `{ url }`, la página de pago de Stripe Checkout de ese pack. No cobra nada |
+
+- **El agente nunca paga.** Dale la URL de `credits checkout` al usuario: paga él en Stripe. Cuando te diga que ha pagado, comprueba el saldo con `credits balance` (los créditos entran en cuanto Stripe confirma el pago).
+- Aquí sí se puede hablar de euros: son los precios del pack que da `credits packs`. En el resto, habla en créditos.
+- `credits checkout` está disponible en el nivel de permisos `read`, porque no cobra.
+
 ## Códigos de error frecuentes
 
 | Código | Qué hacer |
@@ -207,6 +225,7 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `CAMPAIGN_NOT_FOUND`, `LEAD_NOT_FOUND`, `TEMPLATE_NOT_FOUND`, `EXPORT_TABLE_NOT_FOUND` | Id inexistente o de otra empresa |
 | `INVALID_CAMPAIGN_STATE` | `start` solo funciona sobre campañas `queued`; `pause` solo sobre campañas en marcha; `unpause` solo sobre `paused`; `cancel` sobre en marcha, `paused` o `queued`; `full-sweep` sobre en marcha o `paused` |
 | `CAMPAIGN_RUNNING` / `CAMPAIGN_NOT_STARTED` | Espera a que termine (sin sectores en cola ni esperando turno), o arráncala primero |
+| `INSUFFICIENT_CREDITS` | La empresa no tiene saldo: `credits packs` y `credits checkout <packId>` para que pague el usuario; después, `credits balance` |
 | `CREDIT_LIMIT_REACHED` | La campaña está en su techo de créditos: súbelo con `campaigns credit-limit` y después `unpause` |
 | `LIMIT_REACHED` | La campaña alcanzó un objetivo (`details.limits`): súbelo o quítalo con `campaigns limits` y después `unpause` |
 | `INVALID_EXECUTION_MODE` | `full-sweep` sobre una campaña que ya está en barrido completo |
@@ -216,3 +235,8 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `STEP_IN_PROGRESS` | Espera a que llegue el webhook del paso asíncrono |
 | `UNSUPPORTED_SOURCE` | La operación solo vale para campañas de Google Maps |
 | `TOKEN_EXPIRED`, `INVALID_TOKEN`, `MISSING_TOKEN` | Renueva o configura el token |
+| `SATVOLT_NOT_ENABLED` (401) | La cuenta no tiene LeadGen: ver «Antes de nada» en `satvolt-campaign` |
+| `INVALID_KEY` (401) | La clave `sun_` está revocada o caducada: vuelve a `suntropy auth login --web` |
+| `INSUFFICIENT_SCOPE` (403) | A la clave le falta el permiso que dice `message`: un login nuevo con `--scopes` |
+| `V2_KEY_NOT_SUPPORTED` | Ese comando aún no funciona con una clave `sun_`: necesita `suntropy auth login` |
+| `V1_AUTH_NOT_SUPPORTED` | Ese comando sólo existe en la API v2 y no funciona con sesión ni con API key antigua: `suntropy auth login --web` |
