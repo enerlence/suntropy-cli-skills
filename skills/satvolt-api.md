@@ -39,7 +39,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/campaigns?state=completed&limit=
 |---|---|---|
 | GET | `/campaigns` | `?limit&offset&search&state=a,b&source=maps\|excel\|campaign` |
 | POST | `/campaigns` | Crear (ver abajo) |
-| POST | `/campaigns/estimate` | `{ area, businessGroups?, searchQuery?, templateId? \| fromCampaignId?, sample?, offset? }` → `{ area, mode, businessGroups, places: {atLeast, exhaustive, requests, cached}, byType[], sample[], warnings }`. Preview de FIND_LEADS sin crear nada; `atLeast` es un mínimo y la respuesta se cachea 7 días |
+| POST | `/campaigns/estimate` | `{ area, businessGroups?, searchQuery?, templateId? \| fromCampaignId?, sample?, offset? }` → `{ area, mode, businessGroups, places: {atLeast, exhaustive, requests, cached}, byType[], sample[], warnings }`. Preview de FIND_LEADS sin crear nada; `atLeast` es un mínimo y la respuesta se cachea 7 días. Con `leadSource: "cadastral_parcels"` y `parcels`, ver *Campañas por parcelas catastrales* |
 | POST | `/campaigns/excel/preview` | multipart `file` (+ `?sampleSize`) → `{ headers, sampleRows, totalRows }` |
 | POST | `/campaigns/excel/geocode-test` | multipart `file` + `payload` JSON `{ columns[], sampleSize?, region? }` → `{ testId, results[{row, query, success, coordinates, formattedAddress, error}] }` |
 | POST | `/campaigns/from-excel` | multipart `file` + `payload` JSON `{ name, columnMapping{commercialName{column\|literal}, coordinates?, address?[], phone?, url?, email?, country?, googlePlacesType?}, geocoding?{enabled, columns[]}, templateId? \| fromCampaignId? \| steps?, maxLeads?, region?, description?, start? }` → como `POST /campaigns` más `leads`. Origen `excel`: entra por IMPORT_LEADS (+ GEOCODE_ADDRESS si geocodifica) y no admite `extend` |
@@ -130,11 +130,50 @@ POST /campaigns
   - `steps` son solo los pasos LEAD `[{action, config?, uid?, disable?}]`. Se validan contra `configSchema`, se rellenan los `default` y se añaden las dependencias que falten, con aviso.
   - `businessGroups` es `["businesses"]` por defecto si no hay base.
   - Opcionales: `searchQuery`, `description`, `inputAddress` y `region`.
+  - `leadSource`: `google_places` (por defecto, negocios de Maps) o `cadastral_parcels` (un lead por parcela catastral), con sus filtros en `parcels`. Ver *Campañas por parcelas catastrales*.
   - `creditLimit`: techo de gasto de la campaña en créditos. Si no se manda, **100.000**; `null` la deja sin techo. Igual en `POST /campaigns/from-excel`.
   - `limits`: objetivos, `{ completedLeads?, annualKwh?, roofAreaM2? }`. Ver *Objetivos de campaña*.
   - `executionMode`: `sectors` (por defecto en las campañas de Maps) o `full`. `sectorsInFlight`: sectores a la vez en modo `sectors`, de 1 a 20 (2 por defecto). `leadBatchSize`: leads de un sector que entran a la vez, de 1 a 500 (25 por defecto). Valores no válidos: `400 VALIDATION_ERROR`. Las campañas copiadas de otra (`fromCampaignId`) y las de Excel van siempre en `full`.
 - **Respuesta:** `{ campaign, area, configuration, estimatedCreditsPerLead, basedOn, started, warnings }`.
 - **Errores:** `422 VALIDATION_ERROR` trae en `details[]` el `index`, `uid`, `action`, `field` y `message` de cada problema. Otros: `400 INVALID_AREA`, `404 TEMPLATE_NOT_FOUND`, `400 UNSUPPORTED_SOURCE`.
+
+### Campañas por parcelas catastrales (`leadSource`)
+
+Con `"leadSource": "cadastral_parcels"`, FIND_LEADS no busca en Google Maps: **cada lead es una parcela catastral** del área que pasa los filtros de `parcels`. No admite `searchQuery` y no usa `businessGroups`; `parcels` sin `leadSource: "cadastral_parcels"` es `400 VALIDATION_ERROR`.
+
+```json
+POST /campaigns
+{
+  "name": "Piscinas · Las Rozas",
+  "area": { "type": "circle", "center": { "lat": 40.515, "lng": -3.893 }, "radiusMeters": 800 },
+  "leadSource": "cadastral_parcels",
+  "parcels": { "classes": ["urban"], "uses": ["residential"], "minAreaM2": 300 },
+  "maxLeads": 200,
+  "steps": [{ "action": "GEO_LAYER", "config": { "outputKey": "piscinas", "geoConfig": { "…": "…" } } }]
+}
+```
+
+- **`parcels`** (todo opcional; sin filtros, todas las parcelas del área): `classes` (`urban`, `rustic`), `minAreaM2`, `maxAreaM2`, `uses` (`residential`, `agriculture`, `industrial`, `office`, `retail`, `publicServices`), `building` (`any`, `with`, `without`), `minBuiltAreaM2`, `maxBuiltAreaM2`, `pools` (`any`, `with`, `without`), `tileM` (100–1.000 m, 500 por defecto) y `declared` (`false` no pide edificios ni piscinas; incompatible con los filtros de uso, edificación y piscinas). Una clave desconocida o un valor fuera de rango: `400 VALIDATION_ERROR`.
+- **Uso, edificación y piscinas** solo con el Catastro estatal: las parcelas de los catastros forales, Francia e Italia no traen esos datos y no pasan esos filtros.
+- **La configuración** va en el paso FIND_LEADS (`config.leadSource`, `config.parcels`). `GET /campaigns/:id/configuration` lo resume en `leadSource` y `parcels`. Un backend sin este modo ignora los dos campos y crea una campaña de Maps: comprueba `configuration.leadSource` en la respuesta.
+- **Plantillas y campañas base:** una campaña creada desde una plantilla o desde otra campaña por parcelas hereda el modo y los filtros. Si el body trae `leadSource`, manda él y los filtros de la base no se heredan; si solo trae `parcels`, se usa el modo de la base con esos filtros.
+- **Créditos:** el barrido cobra 1 crédito por cada 10 parcelas convertidas en lead; lo caro son los pasos por lead (un `GEO_LAYER` con `vision`, unos 7 créditos por parcela).
+
+**Lead:** `commercialName` `Parcela <ref> (<uso>)` o `Parcela rústica <ref>`, `referenceId` = la referencia catastral, `googlePlacesID` = `cadastre:<catastro>:<referencia>`, `googlePlacesType` = `cadastral_parcel`, `coordinates` = un punto interior. `fullData.catastralParcel` (polígono, como lo deja FIND_ROOFTOP) y `fullData.parcel` (`ref`, `source`, `parcelClass`, `areaM2`, `location`, `polygon` y `declared`: `building.use`, `.grossFloorAreaM2`, `.footprintM2`, `.year`, `builtFraction`, `pools.count`, `pools.areaM2`).
+
+**Estimación** (`POST /campaigns/estimate` con `area`, `leadSource: "cadastral_parcels"`, `parcels`, `sample?`, `offset?`): cuenta las parcelas reales en hasta 8 teselas de 250 m repartidas por el área y extrapola. No crea nada ni cobra. **Tarda 20–50 s** (el Catastro atiende casi en serie): usa un timeout de cliente de al menos 90 s. `templateId`/`fromCampaignId` no aportan los filtros de parcelas.
+
+```json
+{ "area": { … }, "leadSource": "cadastral_parcels", "parcelFilters": { "classes": ["urban"], "uses": ["residential"] },
+  "parcels": { "estimated": 1240, "inAreaEstimated": 3100, "exact": false, "tileM": 250, "tilesTotal": 41, "tilesSampled": 5,
+               "sampled": { "inArea": 380, "matching": 152, "rejected": { "use": 120, "area": 108 } } },
+  "estimatedSweepCredits": 124,
+  "sample": [{ "ref": "0213702VK4601S", "name": "Parcela 0213702VK4601S (…)", "source": "national", "parcelClass": "urban",
+               "areaM2": 512, "use": "residential", "builtAreaM2": 210, "pools": 1, "location": { "lat": 40.5151, "lng": -3.8931 } }],
+  "sampleOffset": 0, "warnings": ["…"] }
+```
+
+`rejected` dice por qué quedaron fuera las parcelas de la muestra: `class`, `area`, `use`, `building`, `builtArea`, `pools` o `noDeclaredData` (catastro sin datos de edificios).
 
 ### Ampliar (`extend`)
 
@@ -204,9 +243,9 @@ Suma todos los cargos del periodo, incluida la búsqueda de leads en Google Maps
 
 | Método | Ruta | Body |
 |---|---|---|
-| GET | `/campaigns/:id/configuration` | → `{ campaignId, source, businessGroups, description, updatedAtMs, steps[{uid, action, target, disable, structural, config}] }` |
+| GET | `/campaigns/:id/configuration` | → `{ campaignId, source, businessGroups, postalCodePrefixes, leadSource, parcels, description, updatedAtMs, steps[{uid, action, target, disable, structural, config}] }`. `leadSource` es `google_places` o `cadastral_parcels`, y `parcels` sus filtros (o `null`) |
 | PUT | `/campaigns/:id/configuration` | `{ steps: [...lista completa de pasos LEAD...], businessGroups?, description? }`. Los estructurales se ignoran, así que se puede reenviar lo que devuelve el GET |
-| PATCH | `/campaigns/:id/configuration` | `{ steps: [parche, ...], businessGroups?, description? }` |
+| PATCH | `/campaigns/:id/configuration` | `{ steps: [parche, ...], businessGroups?, description?, leadSource?, parcels? }`. `leadSource` y `parcels` (`null` quita los filtros) solo con la campaña en cola: si no, `409 CAMPAIGN_STARTED`. Cambiar solo `parcels` conserva el modo |
 | GET | `/campaigns/:id/steps` | Pasos con `name`, `creditCost`, `isAsync`, `executedLeads`, `neverExecuted`, `runnable` y `reason` |
 | POST | `/campaigns/:id/steps/:uid/run` | Ejecuta sobre los leads existentes un paso que ningún lead ha ejecutado |
 
@@ -331,12 +370,12 @@ La `action` de un paso existente no se puede cambiar. Si la campaña está en ma
 |---|---|---|
 | GET | `/campaign-templates` | `?search=` |
 | GET | `/campaign-templates/:idOrName` | Detalle |
-| POST | `/campaign-templates` | `{ name, description?, steps, businessGroups?, configurationDescription?, searchQuery?, maxLeads? }` o `{ fromCampaignId, name, description? }` |
+| POST | `/campaign-templates` | `{ name, description?, steps, businessGroups?, configurationDescription?, searchQuery?, maxLeads?, leadSource?, parcels? }` o `{ fromCampaignId, name, description? }` (hereda el modo de la campaña) |
 | PUT | `/campaign-templates/:idOrName` | Plantilla completa (`steps` obligatorio; lo que no se envía se borra) |
-| PATCH | `/campaign-templates/:idOrName` | Campos sueltos; `steps` son parches por uid; `maxLeads: null` o `searchQuery: null` quitan el valor |
+| PATCH | `/campaign-templates/:idOrName` | Campos sueltos; `steps` son parches por uid; `maxLeads: null` o `searchQuery: null` quitan el valor. `leadSource: null` vuelve a Maps y `parcels: null` quita los filtros; cambiar solo uno de los dos conserva el otro |
 | DELETE | `/campaign-templates/:idOrName` | Borra la plantilla |
 
-- **Vista:** `{ id, name, description, source, steps[{uid, action, target, disable, config}], businessGroups, configurationDescription, searchQuery, maxLeads, sourceCampaignId, createdAtMs, updatedAtMs }`.
+- **Vista:** `{ id, name, description, source, steps[{uid, action, target, disable, config}], businessGroups, configurationDescription, searchQuery, maxLeads, leadSource, parcels, sourceCampaignId, createdAtMs, updatedAtMs }`.
 - **Errores:** `409 TEMPLATE_NAME_TAKEN` y `404 TEMPLATE_NOT_FOUND`.
 - **uids compartidos:** las campañas creadas desde la misma plantilla comparten uids de pasos.
 
