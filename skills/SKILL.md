@@ -238,6 +238,7 @@ Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside
 ```bash
 suntropy satvolt templates create --name "Industria" --from-campaign 62
 suntropy satvolt campaigns estimate --circle 37.35,-6.27 --radius 5000 --business-groups businesses   # how many businesses, before spending
+suntropy satvolt campaigns estimate --circle 40.515,-3.893 --radius 800 --parcel-uses residential   # cadastral parcels as leads (pools, built vs declared, plots); 20-50 s
 suntropy satvolt campaigns create --name "Sonda" --template "Industria" --circle 37.35,-6.27 --radius 5000 --max-leads 50
 suntropy satvolt campaigns start <id> && suntropy satvolt campaigns funnel <id> --format human
 suntropy satvolt campaigns create-from-excel empresas.xlsx --name "CRM" --name-column Empresa --geocode-columns "Dirección,Municipio" --template "Industria"   # own list instead of Maps
