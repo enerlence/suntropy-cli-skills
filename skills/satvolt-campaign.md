@@ -534,14 +534,13 @@ suntropy satvolt config patch <id> --lead-source google_places    # vuelve a neg
   },
   "rules": [
     { "id": "ampliacion", "type": "flag", "label": "Más de 30 m² de cubierta sin declarar", "feature": "m2_sin_declarar", "op": "gt", "value": 30 },
-    { "id": "proporcion", "type": "flag", "label": "Cubierta vista un 25 % mayor que la declarada", "feature": "visto_entre_declarado", "op": "gt", "value": 1.25 },
-    { "id": "sin_declarar", "type": "flag", "label": "Edificación en parcela sin edificación declarada", "feature": "edificacion_declarada", "op": "eq", "value": false }
+    { "id": "proporcion", "type": "flag", "label": "Cubierta vista un 25 % mayor que la declarada", "feature": "visto_entre_declarado", "op": "gt", "value": 1.25 }
   ],
   "output": { "scoreScale": 100, "aptThreshold": 0, "keepCandidates": "all", "includeGeometry": true } } } }]
 ```
 
 - Unos 7 créditos por parcela. Todas salen aptas (`aptThreshold: 0`): lo que importa son los avisos.
-- El aviso `sin_declarar` salta en **toda** parcela sin edificación declarada, se vea algo o no: léelo junto a `m2_sin_declarar` (en una parcela sin edificación declarada, la huella es 0 y la diferencia es todo lo visto).
+- En una parcela sin edificación declarada la huella es 0, así que cualquier cubierta vista de más de 30 m² salta como `ampliacion`: es el aviso de construcción nueva (un solar vacío no lleva ninguno).
 - La huella declarada es la planta de los edificios; SAM ve también aleros, pérgolas y porches cubiertos. Por eso el margen de 30 m² y del 25 %: ajústalo con el usuario tras el piloto.
 
 **Columnas** (con el `outputKey` de cada receta; con `lead_parcel` hay un solo candidato, el `[0]`):
