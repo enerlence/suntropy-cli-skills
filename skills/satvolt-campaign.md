@@ -412,6 +412,7 @@ En vez de negocios de Google Maps, **cada lead es una parcela catastral** del á
 |---|---|
 | «Piscinas no declaradas en esta urbanización», «viviendas con piscina sin declarar» | Parcelas urbanas residenciales + `GEO_LAYER` con SAM 3 y `compare` (receta 1, abajo) |
 | «Construcciones o ampliaciones que no están en el Catastro», «edificado frente a declarado» | Parcelas urbanas + `GEO_LAYER` que mide las cubiertas y las compara con la huella declarada (receta 2) |
+| «Revisa lo declarado en el Catastro», «qué no cuadra con el Catastro en esta urbanización» | Las dos anteriores + un `GEO_LAYER` de revisión sin imágenes que las cruza con lo declarado (receta 3) |
 | «Solares», «suelo libre de más de 2.000 m²», «parcelas sin edificar» | `--parcel-building without` y superficie mínima; con o sin pasos detrás |
 | «Naves de más de 1.000 m² construidos», «todas las parcelas industriales del polígono» | `--parcel-uses industrial` y superficie construida mínima, aunque no tengan ficha en Google Maps |
 
