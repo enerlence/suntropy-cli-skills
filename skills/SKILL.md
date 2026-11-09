@@ -47,6 +47,7 @@ This skill includes detailed guides for the main workflows:
 - [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.
 - [[satvolt-named-leads]] — **Read it first whenever the user names specific companies (1-10, e.g. an inbound lead or "analyse Geesol in Camas: does it have panels?") instead of an area, radius or municipality.** Creates a campaign with just those companies and runs the steps one by one on each lead, reading each result before the next; never launches the whole campaign.
 - [[satvolt-campaign]] — Create, configure, follow and export Satvolt lead-generation campaigns over an area (Google Maps + enrichment pipeline). For specific named companies, use [[satvolt-named-leads]] instead.
+- [[satvolt-catastro]] — Review what the Spanish Cadastre declares on houses with a cadastral-parcel campaign: undeclared pools and buildings, declared pools that are gone or unused, and when they appeared (SAM 3 on the PNOA orthophoto, Gemini checks, historical flights). Step by step, with the four GEO_LAYER configurations.
 - [[satvolt-probe-to-full-campaign]] — Launch a probe campaign from a template, validate its data, fix the pipeline without relaunching and extend it to the whole area.
 - [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
 - [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
@@ -249,7 +250,7 @@ suntropy satvolt campaigns usage <id> --format human            # credits consum
 suntropy satvolt export-tables export <tableId> --file-format xlsx --out leads.xlsx
 ```
 
-See [[satvolt-cli]] for every command, [[satvolt-api]] for the HTTP API and [[satvolt-campaign]] / [[satvolt-probe-to-full-campaign]] / [[satvolt-lead-troubleshooting]] for workflows.
+See [[satvolt-cli]] for every command, [[satvolt-api]] for the HTTP API and [[satvolt-campaign]] / [[satvolt-probe-to-full-campaign]] / [[satvolt-catastro]] / [[satvolt-lead-troubleshooting]] for workflows.
 
 ### Configuration (`suntropy config`) — since 0.4.0
 
