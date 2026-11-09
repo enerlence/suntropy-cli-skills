@@ -6,6 +6,8 @@ Toda campaña nueva nace con un techo de **100.000 créditos**: al alcanzarlo se
 
 Las campañas nuevas de Maps van **por sectores**: buscan un sector, terminan sus leads y pasan al siguiente, del centro del área hacia fuera. Si se paran, dejan leads terminados y no cientos a medias. Ver [Entrega por sectores](#entrega-por-sectores-y-barrido-completo). Si el usuario expresa su meta en leads, kWh o m², ponle un **objetivo**: la campaña se cierra sola al alcanzarlo. Ver [Objetivos](#objetivos-de-campaña).
 
+> **¿Parcelas en vez de empresas?** Si el brief habla de parcelas, viviendas, solares, piscinas o edificaciones («piscinas no declaradas en esta urbanización», «construcciones que no están en el Catastro», «solares de más de 2.000 m²»), cada lead es una parcela catastral y no un negocio: ver [Campaña por parcelas catastrales](#campaña-por-parcelas-catastrales-un-lead-por-parcela). Para piscinas o construcciones no declaradas y la revisión de lo declarado, la receta completa es `satvolt-catastro`.
+>
 > **¿Empresas concretas en vez de una zona?** Si el usuario da nombres de empresas (de 1 a 10: un lead inbound, «analiza Geesol», «¿estas tres naves tienen paneles?») y no un área, un radio o un municipio, este no es tu flujo: sigue `satvolt-named-leads`, que crea la campaña solo con esas empresas y ejecuta los pasos uno a uno.
 
 ## Parámetros de entrada
@@ -20,6 +22,7 @@ Las campañas nuevas de Maps van **por sectores**: buscan un sector, terminan su
 | Objetivos (`completedLeads`, `annualKwh`, `roofAreaM2`) | No | ninguno |
 | Modo de ejecución (`sectors` o `full`) y sectores a la vez | No | `sectors`, 2 a la vez |
 | Grupos de negocio | No | `businesses` |
+| Origen de los leads: negocios de Maps o parcelas catastrales (con sus filtros) | No | negocios de Maps |
 | Plantilla o campaña base (pasos, grupos, límite) | No | - |
 | Pasos del pipeline (acciones y su config) | No | los de la base; sin base, ninguno (solo descubre leads) |
 | Arrancar al crear | No | no (queda en cola) |
@@ -399,6 +402,92 @@ suntropy satvolt campaigns delete <campaignId> --yes           # borra la campa�
 
 Para sacar más leads de una campaña ya terminada, usa `extend` (sección anterior), nunca `reset`.
 
+### Campaña por parcelas catastrales (un lead por parcela)
+
+En vez de negocios de Google Maps, **cada lead es una parcela catastral** del área que pasa unos filtros: clase de suelo, superficie, uso de la edificación declarada, si tiene edificación o piscina declaradas. Los pasos siguientes trabajan sobre la parcela.
+
+**Cuándo usarlo:** el brief habla de parcelas, viviendas, solares o lo que hay dentro de ellas, no de empresas:
+
+| Brief | Planteamiento |
+|---|---|
+| «Piscinas no declaradas», «construcciones o ampliaciones no declaradas», «revisa lo declarado en el Catastro», «piscinas en desuso», «¿cuándo se construyó?» | **Sigue `satvolt-catastro`:** chalets + tres `GEO_LAYER` (piscinas, edificación, revisión) y, después, el histórico solo en las parcelas con aviso |
+| «Solares», «suelo libre de más de 2.000 m²», «parcelas sin edificar» | `--parcel-building without` y superficie mínima; con o sin pasos detrás |
+| «Naves de más de 1.000 m² construidos», «todas las parcelas industriales del polígono» | `--parcel-uses industrial` y superficie construida mínima, aunque no tengan ficha en Google Maps |
+
+**No lo uses** si el usuario quiere empresas para venderles algo (nombre, web, teléfono, decisor): una parcela no tiene nombre comercial, web ni teléfono, así que QUALIFY, los `AI_AGENT` de empresa y los decisores no tienen con qué trabajar. Eso es una campaña de Maps.
+
+**Filtros** (todos opcionales; sin ninguno, todas las parcelas del área son leads):
+
+| Flag | JSON (`--parcels`) | Qué hace |
+|---|---|---|
+| `--parcel-classes urban,rustic` | `classes` | Clase de suelo, por la forma de la referencia estatal. Los catastros forales, Francia e Italia no la tienen: no pasan este filtro |
+| `--parcel-min-area`, `--parcel-max-area` | `minAreaM2`, `maxAreaM2` | Superficie de la parcela, en m² |
+| `--parcel-uses residential,industrial,…` | `uses` | Uso de la edificación declarada: `residential`, `agriculture`, `industrial`, `office`, `retail`, `publicServices`. Una parcela sin edificio no tiene uso y no pasa |
+| `--parcel-building with\|without` | `building` | Con edificación declarada, o sin ella (solares, rústicas sin construir) |
+| `--parcel-min-built-area`, `--parcel-max-built-area` | `minBuiltAreaM2`, `maxBuiltAreaM2` | Superficie construida oficial |
+| `--parcel-pools with\|without` | `pools` | Con alguna piscina declarada, o sin ninguna |
+| `--parcel-tile <m>` | `tileM` | Lado de cada petición al Catastro, de 100 a 1.000 m (500 por defecto). Rara vez hace falta |
+| `--no-parcel-declared` | `declared: false` | No pide edificios ni piscinas: más rápido, pero incompatible con los filtros de uso, edificación y piscinas |
+
+Cualquier `--parcel-*` o `--parcels '<json>'|@fichero` implica `--lead-source cadastral_parcels`; los flags pisan las claves del JSON. Los filtros de uso, edificación y piscinas **solo funcionan con el Catastro estatal**: en Navarra, el País Vasco, Francia e Italia la parcela no trae esos datos y queda fuera. Sin esos filtros, sus parcelas entran igual.
+
+**1. Estima antes de crear** (no crea nada ni cobra). Tarda **20–60 s**: el Catastro es lento.
+
+```bash
+suntropy satvolt campaigns estimate --circle 40.5150,-3.8930 --radius 800 \
+  --parcel-classes urban --parcel-uses residential --parcel-min-area 300 --format human
+```
+
+- `parcels.estimated`: parcelas que serían leads; `inAreaEstimated`: todas las del área. Cuenta las parcelas de verdad en hasta 8 teselas de 250 m repartidas por el área y extrapola; `exact: true` si las midió todas.
+- `parcels.sampled.rejected`: por qué se quedaron fuera las de la muestra (`use`, `area`, `class`, `noDeclaredData`…). Si casi todo es `noDeclaredData`, la zona no es del Catastro estatal: quita los filtros de uso, edificación y piscinas.
+- `estimatedSweepCredits`: lo que cobra el barrido. `sample`: referencias, uso, superficie, construido y piscinas declaradas, para enseñar cinco o diez al usuario.
+- En un área que mezcla casco y campo la extrapolación es gruesa: sirve para el orden de magnitud.
+- `--template` y `--from-campaign` no aportan aquí los filtros de parcelas: pásalos.
+
+**2. Crea la campaña** con los mismos filtros y los pasos que trabajan sobre la parcela:
+
+```bash
+suntropy satvolt campaigns create --name "Piscinas · Las Rozas" --circle 40.5150,-3.8930 --radius 800 \
+  --parcel-classes urban --parcel-uses residential --parcel-min-area 300 \
+  --max-leads 200 --steps @geo-piscinas.json
+```
+
+No admite `--search-query`, y `--business-groups` no se usa. **Comprueba en la respuesta que `configuration.leadSource` es `cadastral_parcels`:** un backend sin este modo ignora los filtros y crea una campaña de Maps (la CLI lo avisa por stderr). Si pasa, bórrala con `campaigns delete <id> --yes` y dile al usuario que ese entorno aún no tiene campañas por parcelas.
+
+Lo demás funciona igual que en una campaña de Maps: sectores de ~1 km, `--max-leads`, objetivos, entrega por sectores, pausa, `extend` y techo de créditos. Una plantilla guarda el modo y los filtros (`templates create … --parcel-*` o `--from-campaign`), y una campaña creada desde ella o desde otra campaña por parcelas los hereda salvo que pases otros.
+
+**3. Cambiar el modo o los filtros** solo con la campaña en cola (`409 CAMPAIGN_STARTED` si ya empezó):
+
+```bash
+suntropy satvolt config patch <id> --parcel-min-area 500          # cambia filtros, sigue en parcelas
+suntropy satvolt config patch <id> --no-parcels                   # quita los filtros
+suntropy satvolt config patch <id> --lead-source google_places    # vuelve a negocios de Maps
+```
+
+**El lead:**
+
+| Campo | Valor |
+|---|---|
+| `commercialName` | `Parcela 0112601VK4601S (industrial)` o `Parcela rústica 28079A01200034` |
+| `referenceId` | La referencia catastral |
+| `coordinates` | Un punto interior de la parcela |
+| `fullData.catastralParcel` | La parcela con su polígono, como la deja FIND_ROOFTOP: no hace falta añadir ese paso |
+| `fullData.parcel` | Lo declarado: `areaM2`, `parcelClass`, `declared.building.use`, `.grossFloorAreaM2`, `.footprintM2`, `.year`, `declared.builtFraction`, `declared.pools.count`, `.areaM2` |
+
+Úsalos en columnas de la tabla (`lead.referenceId`, `fullData.parcel.declared.building.use`…) y en `skipIfEmpty`/`successIf`.
+
+**Créditos:** el barrido cobra **1 crédito por cada 10 parcelas** convertidas en lead. Lo caro son los pasos que vienen después, por parcela: un `GEO_LAYER` con SAM 3 (`vision`) cuesta unos **7 créditos por parcela** (5 por la llamada al modelo, 1 de base y 1 por el mapa), y el de revisión sin imágenes, 1–2. Piscinas + edificación + revisión: unos 15–16 por parcela. Coste máximo = `estimatedSweepCredits` + `estimatedCreditsPerLead × maxLeads`. Acota con `--max-leads` y filtros antes de lanzar: un barrido residencial puede dar miles de parcelas.
+
+**Tiempo:** en zonas densas el barrido es lento. En una urbanización de Las Rozas, una tesela de 500 m (424 parcelas) tardó más de un minuto entre parcelas, edificios y piscinas, y un sector de 1 km, unos 4 minutos. En un polígono industrial, segundos por tesela.
+
+#### Revisión del Catastro (piscinas y edificación): `satvolt-catastro`
+
+La receta completa (filtros para chalets, los tres `GEO_LAYER` con sus `outputKey` obligatorios, la tabla, cómo leer los avisos, el histórico del PNOA, lo medido en Somosaguas y sus límites) está en la skill **`satvolt-catastro`**. Lo esencial:
+
+- **Filtros para chalets:** `--parcel-classes urban --parcel-uses residential --parcel-min-area 600 --parcel-max-area 5000 --parcel-max-built-area 900 --parcel-tile 350` y `--max-leads`. Sin `--parcel-max-built-area` entran bloques de pisos con piscina comunitaria.
+- **Pipeline:** «Piscinas (SAM 3)» `piscinas` → «Edificación (SAM 3)» `edificacion` → «Revisión catastro» `revision`; unos 15–16 créditos por parcela. El histórico (50–70) solo sobre las parcelas con aviso, lead a lead.
+- **`GEO_LAYER`** no aparece en `catalog actions` (está oculto), pero se añade igual con `--steps` o `steps add`. Con el candidato `lead_parcel` mide dentro del polígono de la parcela y compara por posición con lo declarado (`fullData.parcel.declared.pools.polygons`, `.building.footprints`).
+
 ### Campaña desde un Excel (listado propio de empresas)
 
 Cuando el usuario ya tiene las empresas (un CRM, un listado de un polígono, una feria), la campaña no busca en Maps: importa las filas del Excel como leads y les pasa el pipeline. Una fila = un lead. Se lee la **primera hoja** y las cabeceras van en la **fila 1**.
@@ -454,6 +543,7 @@ Los errores salen por stderr como `{ error, status, message, details }`:
 | 400 `INVALID_AREA` | área mal formada o fuera de límites. |
 | 400 `VALIDATION_ERROR` | `--execution-mode`, `--sectors-in-flight` (1–20) o un objetivo no válidos: clave desconocida o valor no positivo. |
 | 400 `INVALID_EXCEL` | el Excel no tiene filas, o falta el nombre comercial o la forma de localizar cada fila (coordenadas o columnas a geocodificar). |
+| 409 `CAMPAIGN_STARTED` | `config patch` con `--lead-source`, `--parcels` o `--parcel-*` sobre una campaña que ya empezó: el modo y los filtros de parcelas solo cambian en cola. |
 | 400 `UNSUPPORTED_SOURCE` | `extend` sobre una campaña de Excel o copiada de otra: sus leads no se amplían. |
 | 409 `INVALID_CAMPAIGN_STATE` | `start` sobre una campaña que no está en cola (hay que hacer `reset` antes); `pause` sobre una que no está en marcha; `unpause` sobre una que no está `paused`; `full-sweep` sobre una que no está en curso ni pausada. |
 | 409 `CREDIT_LIMIT_REACHED` | la campaña llegó a su techo de créditos: `unpause`, `extend`, `full-sweep` y `leads run-step` no se ejecutan hasta subirlo o quitarlo con `campaigns credit-limit`. `details` trae el techo, lo gastado y lo reservado. |
