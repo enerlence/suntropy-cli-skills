@@ -432,7 +432,7 @@ En vez de negocios de Google Maps, **cada lead es una parcela catastral** del á
 
 Cualquier `--parcel-*` o `--parcels '<json>'|@fichero` implica `--lead-source cadastral_parcels`; los flags pisan las claves del JSON. Los filtros de uso, edificación y piscinas **solo funcionan con el Catastro estatal**: en Navarra, el País Vasco, Francia e Italia la parcela no trae esos datos y queda fuera. Sin esos filtros, sus parcelas entran igual.
 
-**1. Estima antes de crear** (no crea nada ni cobra). Tarda **20–50 s**: el Catastro es lento.
+**1. Estima antes de crear** (no crea nada ni cobra). Tarda **20–60 s**: el Catastro es lento.
 
 ```bash
 suntropy satvolt campaigns estimate --circle 40.5150,-3.8930 --radius 800 \
@@ -477,21 +477,21 @@ suntropy satvolt config patch <id> --lead-source google_places    # vuelve a neg
 
 Úsalos en columnas de la tabla (`lead.referenceId`, `fullData.parcel.declared.building.use`…) y en `skipIfEmpty`/`successIf`.
 
-**Créditos:** el barrido cobra **1 crédito por cada 10 parcelas** convertidas en lead. Lo caro son los pasos que vienen después, por parcela: un `GEO_LAYER` con SAM 3 (`vision`) cuesta unos **7 créditos por parcela** (5 por la llamada al modelo, 1 de base y 1 por el mapa). Coste máximo = `estimatedSweepCredits` + `estimatedCreditsPerLead × maxLeads`. Acota con `--max-leads` y filtros antes de lanzar: un barrido residencial puede dar miles de parcelas.
+**Créditos:** el barrido cobra **1 crédito por cada 10 parcelas** convertidas en lead. Lo caro son los pasos que vienen después, por parcela: un `GEO_LAYER` con SAM 3 (`vision`) cuesta unos **7 créditos por parcela** (5 por la llamada al modelo, 1 de base y 1 por el mapa), y el de revisión sin imágenes, 1–2. Piscinas + edificación + revisión: unos 15–16 por parcela. Coste máximo = `estimatedSweepCredits` + `estimatedCreditsPerLead × maxLeads`. Acota con `--max-leads` y filtros antes de lanzar: un barrido residencial puede dar miles de parcelas.
 
 **Tiempo:** en zonas densas el barrido es lento. En una urbanización de Las Rozas, una tesela de 500 m (424 parcelas) tardó más de un minuto entre parcelas, edificios y piscinas, y un sector de 1 km, unos 4 minutos. En un polígono industrial, segundos por tesela.
 
 #### Recetas con `GEO_LAYER` sobre la parcela del lead
 
-`GEO_LAYER` no aparece en `catalog actions` (está oculto), pero se añade igual con `--steps` o `steps add`. Con el candidato **`lead_parcel`** mide dentro del polígono de la parcela del lead, y los campos `declared_*` del candidato traen lo declarado en el Catastro: `declared_use`, `declared_building`, `declared_built_m2`, `declared_footprint_m2`, `declared_built_fraction`, `declared_pools`, `declared_pool_m2` y `declared_year`. Solo existen en leads de una campaña por parcelas del Catastro estatal. La variable **`compare`** resta (`difference`) o divide (`ratio`) dos variables del mismo candidato: lo visto con SAM 3 frente a lo declarado.
+`GEO_LAYER` no aparece en `catalog actions` (está oculto), pero se añade igual con `--steps` o `steps add`. Con el candidato **`lead_parcel`** mide dentro del polígono de la parcela del lead, y los campos `declared_*` del candidato traen lo declarado en el Catastro: `declared_use`, `declared_building`, `declared_built_m2`, `declared_footprint_m2`, `declared_built_fraction`, `declared_pools`, `declared_pool_m2` y `declared_year`. Solo existen en leads de una campaña por parcelas del Catastro estatal. La variable **`compare`** resta (`difference`), divide (`ratio`) o iguala (`equal`, sí/no) dos variables del mismo candidato: lo visto con SAM 3 frente a lo declarado. Una variable `from: "lead"` lee lo que dejó un paso anterior, con índices en la ruta (`fullData.piscinas.candidates[0].features.piscinas_vistas`).
 
-> **Sin validar.** Ninguna de las dos recetas se ha probado aún con imágenes reales ni contra un censo: pilótalas en 3–5 leads (`leads run-step <id> <leadId> GEO_LAYER`) y revisa con el usuario las imágenes con sus máscaras antes de lanzar. Son una precualificación visual, no una inspección: la ortofoto tiene la fecha de su vuelo (2–3 años) y una lona, un toldo o un árbol pueden tapar o imitar lo que se busca.
+> **Probadas en 10 chalets de Somosaguas** (campaña 81 de dev, 09-11-2026, una piscina declarada en cada uno, PNOA de julio de 2023): SAM 3 vio la piscina en los 10, y con `building roof` (en singular) encontró cubierta en los 10, entre 0,67 y 1,35 veces la huella declarada (el arbolado tapa parte y los aleros suman). **Lo que sigue sin medir es la exhaustividad** frente a un censo de construcciones o piscinas no declaradas: no hay cifra de cuántas no declaradas encuentra. Para una zona nueva, un piloto en 3–5 leads (`leads run-step <id> <leadId> GEO_LAYER`) mirando las imágenes con sus máscaras sigue siendo buena idea. Son una precualificación visual, no una inspección: la ortofoto tiene la fecha de su vuelo (2–3 años) y una lona, un toldo o un árbol pueden tapar o imitar lo que se busca.
 
-**Receta 1: piscinas no declaradas.** Parcelas urbanas residenciales (`--parcel-classes urban --parcel-uses residential`). SAM 3 cuenta las piscinas de la parcela con el texto `swimming pools` (en inglés y en plural, como pide el modelo) y se comparan con las declaradas. Con `--parcel-pools without` solo se miran parcelas sin ninguna piscina declarada: menos parcelas y más baratas, pero se pierden las que tienen más piscinas de las declaradas.
+**Receta 1: piscinas no declaradas.** Parcelas urbanas residenciales (`--parcel-classes urban --parcel-uses residential`). SAM 3 cuenta las piscinas de la parcela con el texto `swimming pools` (en inglés y en plural) y se comparan con las declaradas. Con `--parcel-pools without` solo se miran parcelas sin ninguna piscina declarada: menos parcelas y más baratas, pero se pierden las que tienen más piscinas de las declaradas.
 
 ```json
 [{ "action": "GEO_LAYER", "config": { "customName": "Piscinas no declaradas", "outputKey": "piscinas", "geoConfig": {
-  "id": "piscinas-no-declaradas", "version": 1, "title": "Piscinas no declaradas en el Catastro",
+  "id": "piscinas-no-declaradas", "version": 2, "title": "Piscinas no declaradas en el Catastro",
   "sources": { "pnoa": { "type": "vision", "model": "sam3", "label": "PNOA (SAM 3)",
     "url": "https://www.ign.es/wms-inspire/pnoa-ma", "layer": "OI.OrthoimageCoverage", "prompt": "swimming pools",
     "capture": { "layer": "OI.MosaicElement", "dateField": "Fecha", "resolutionField": "Resolucion" },
@@ -508,20 +508,22 @@ suntropy satvolt config patch <id> --lead-source google_places    # vuelve a neg
   "rules": [
     { "id": "sin_piscina", "type": "exclude", "label": "No se ve ninguna piscina", "feature": "piscinas_vistas", "op": "lte", "value": 0 },
     { "id": "piscina_sin_declarar", "type": "flag", "label": "Más piscinas que las declaradas", "feature": "piscinas_sin_declarar", "op": "gt", "value": 0 },
-    { "id": "lamina_sin_declarar", "type": "flag", "label": "Más de 15 m² de agua sin declarar", "feature": "m2_sin_declarar", "op": "gt", "value": 15 }
+    { "id": "lamina_sin_declarar", "type": "flag", "label": "Más de 50 m² de agua sin declarar", "feature": "m2_sin_declarar", "op": "gt", "value": 50 }
   ],
   "output": { "scoreScale": 100, "aptThreshold": 0, "keepCandidates": "all", "includeGeometry": true } } } }]
 ```
 
-`count` y `area_m2` comparten una sola llamada al modelo (mismo texto): unos 7 créditos por parcela. Las parcelas en las que no se ve ninguna piscina salen excluidas; las sospechosas llevan los avisos en `summary.flags`.
+- `count` y `area_m2` comparten una sola llamada al modelo (mismo texto): unos 7 créditos por parcela. Las parcelas en las que no se ve ninguna piscina salen excluidas; las sospechosas llevan los avisos en `summary.flags`.
+- **El recuento es la señal fiable:** en Somosaguas coincidió con lo declarado en los 10 chalets, una vez que el backend dejó de contar dos veces la misma piscina cuando SAM la devolvía repetida.
+- **La superficie no:** SAM incluye la coronación y mide de 20 a 50 m² más de agua que el polígono declarado. Por eso el aviso de lámina salta a partir de 50 m²; no lo bajes sin mirar imágenes.
 
-**Receta 2: edificación vista frente a la declarada.** Parcelas urbanas, sin filtro de uso (dejaría fuera las que no tienen edificación declarada, que son justo las de una construcción nueva). SAM 3 mide las cubiertas dentro de la parcela con `building roofs` y se compara con la huella declarada. **El texto `building roofs` no está medido** contra ninguna referencia (con «building roof» en singular se vieron huellas razonables que se dejaban alguna): revisa en el piloto que las máscaras cubren las cubiertas y no patios o pavimento.
+**Receta 2: edificación vista frente a la declarada.** Parcelas urbanas, sin filtro de uso (dejaría fuera las que no tienen edificación declarada, que son justo las de una construcción nueva). SAM 3 mide las cubiertas dentro de la parcela con `building roof` y se compara con la huella declarada. **El texto va en singular:** con «building roofs» SAM 3 no devolvió ninguna máscara en 2 de los 10 chalets de Somosaguas; con «building roof» encontró cubierta en los 10, entre 0,67 y 1,35 veces la huella declarada.
 
 ```json
 [{ "action": "GEO_LAYER", "config": { "customName": "Edificación frente a Catastro", "outputKey": "edificacion", "geoConfig": {
-  "id": "edificacion-vs-catastro", "version": 1, "title": "Edificación vista frente a la declarada",
+  "id": "edificacion-vs-catastro", "version": 2, "title": "Edificación vista frente a la declarada",
   "sources": { "pnoa": { "type": "vision", "model": "sam3", "label": "PNOA (SAM 3)",
-    "url": "https://www.ign.es/wms-inspire/pnoa-ma", "layer": "OI.OrthoimageCoverage", "prompt": "building roofs",
+    "url": "https://www.ign.es/wms-inspire/pnoa-ma", "layer": "OI.OrthoimageCoverage", "prompt": "building roof",
     "capture": { "layer": "OI.MosaicElement", "dateField": "Fecha", "resolutionField": "Resolucion" },
     "license": "PNOA cedido por © Instituto Geográfico Nacional, CC BY 4.0" } },
   "candidates": { "source": "lead_parcel" },
@@ -541,7 +543,40 @@ suntropy satvolt config patch <id> --lead-source google_places    # vuelve a neg
 
 - Unos 7 créditos por parcela. Todas salen aptas (`aptThreshold: 0`): lo que importa son los avisos.
 - En una parcela sin edificación declarada la huella es 0, así que cualquier cubierta vista de más de 30 m² salta como `ampliacion`: es el aviso de construcción nueva (un solar vacío no lleva ninguno).
-- La huella declarada es la planta de los edificios; SAM ve también aleros, pérgolas y porches cubiertos. Por eso el margen de 30 m² y del 25 %: ajústalo con el usuario tras el piloto.
+- La huella declarada es la planta de los edificios; SAM ve también aleros, pérgolas y porches cubiertos, y el arbolado le tapa parte (en Somosaguas, de 0,67 a 1,35 veces la huella en casas sin nada sin declarar). Por eso el margen de 30 m² y del 25 %: ajústalo con el usuario tras el piloto.
+
+**Receta 3: revisión de lo declarado frente a lo detectado.** Un tercer `GEO_LAYER` **sin imágenes**, detrás de los dos de SAM (con `outputKey` `piscinas` y `edificacion`, tal cual): lee lo que detectaron (`from: "lead"`) y lo cruza con lo declarado. Dice si coinciden las piscinas (`equal`), su diferencia, y la cubierta detectada frente a la huella declarada (en m² y en proporción) y frente a la superficie construida declarada. Esta última suma todas las plantas: va solo como referencia, la comparación justa es con la huella. Cuesta 1–2 créditos por lead.
+
+```json
+[{ "action": "GEO_LAYER", "config": { "customName": "Revisión frente a Catastro", "outputKey": "revision", "geoConfig": {
+  "id": "revision-catastro", "version": 1, "title": "Catastro frente a lo detectado",
+  "description": "Paso de revisión sin imágenes: cruza lo declarado en el Catastro con lo que detectaron antes los pasos de SAM 3 con outputKey «piscinas» (piscinas-no-declaradas) y «edificacion» (edificacion-vs-catastro). La comparación justa de superficies es con la huella declarada (planta); la superficie construida suma todas las plantas y va solo como referencia.",
+  "sources": {},
+  "candidates": { "source": "lead_parcel" },
+  "features": {
+    "piscinas_declaradas": { "label": "Piscinas declaradas", "from": "candidate", "field": "declared_pools" },
+    "piscinas_detectadas": { "label": "Piscinas detectadas", "from": "lead", "path": "fullData.piscinas.candidates[0].features.piscinas_vistas" },
+    "piscinas_coinciden": { "label": "Coinciden las piscinas", "derive": { "kind": "compare", "a": "piscinas_detectadas", "b": "piscinas_declaradas", "op": "equal" }},
+    "piscinas_diferencia": { "label": "Piscinas detectadas − declaradas", "derive": { "kind": "compare", "a": "piscinas_detectadas", "b": "piscinas_declaradas", "op": "difference" }},
+    "m2_construidos_declarados": { "label": "Superficie construida declarada", "unit": "m²", "from": "candidate", "field": "declared_built_m2" },
+    "m2_huella_declarada": { "label": "Huella declarada", "unit": "m²", "from": "candidate", "field": "declared_footprint_m2" },
+    "m2_cubierta_detectada": { "label": "Cubierta detectada", "unit": "m²", "from": "lead", "path": "fullData.edificacion.candidates[0].features.m2_cubierta_vistos" },
+    "cubierta_menos_huella": { "label": "Cubierta detectada − huella declarada", "unit": "m²", "derive": { "kind": "compare", "a": "m2_cubierta_detectada", "b": "m2_huella_declarada", "op": "difference" }},
+    "cubierta_entre_huella": { "label": "Cubierta detectada / huella declarada", "derive": { "kind": "compare", "a": "m2_cubierta_detectada", "b": "m2_huella_declarada", "op": "ratio" }},
+    "cubierta_entre_construida": { "label": "Cubierta detectada / superficie construida declarada", "derive": { "kind": "compare", "a": "m2_cubierta_detectada", "b": "m2_construidos_declarados", "op": "ratio" }}
+  },
+  "rules": [
+    { "id": "piscina_no_declarada", "type": "flag", "label": "Se detectan más piscinas que las declaradas", "feature": "piscinas_diferencia", "op": "gt", "value": 0 },
+    { "id": "piscina_no_detectada", "type": "flag", "label": "Hay una piscina declarada que no se detecta", "feature": "piscinas_diferencia", "op": "lt", "value": 0 },
+    { "id": "edificacion_no_declarada", "type": "flag", "label": "Más de 50 m² de cubierta por encima de la huella declarada", "feature": "cubierta_menos_huella", "op": "gt", "value": 50 },
+    { "id": "cubierta_mayor", "type": "flag", "label": "Cubierta detectada un 30 % mayor que la huella declarada", "feature": "cubierta_entre_huella", "op": "gt", "value": 1.3 }
+  ],
+  "output": { "scoreScale": 100, "aptThreshold": 0, "keepCandidates": "all" } } } }]
+```
+
+- **Avisos:** piscina no declarada (se detectan más que las declaradas), piscina declarada que no se detecta, más de 50 m² de cubierta por encima de la huella y cubierta un 30 % mayor que la huella.
+- **Va detrás** de los dos pasos de SAM en `--steps`: si falta alguno, sus variables salen vacías y sus avisos no saltan.
+- Es la tabla de revisión natural: una fila por parcela con lo declarado, lo detectado y los avisos.
 
 **Columnas** (con el `outputKey` de cada receta; con `lead_parcel` hay un solo candidato, el `[0]`):
 
@@ -553,6 +588,22 @@ Piscinas vistas=fullData.piscinas.candidates[0].features.piscinas_vistas:number;
 Sin declarar=fullData.piscinas.candidates[0].features.piscinas_sin_declarar:number;\
 Agua sin declarar (m²)=fullData.piscinas.candidates[0].features.m2_sin_declarar:number;\
 Avisos=fullData.piscinas.summary.flags;Maps=synthetic.googleMapsUrl"
+```
+
+Con la receta 3, la tabla de revisión sale de sus variables:
+
+```bash
+suntropy satvolt export-tables create <id> --name "Revisión frente a Catastro" --columns \
+"Parcela=lead.referenceId;Uso=fullData.parcel.declared.building.use;\
+Piscinas declaradas=fullData.revision.candidates[0].features.piscinas_declaradas:number;\
+Piscinas detectadas=fullData.revision.candidates[0].features.piscinas_detectadas:number;\
+Coinciden=fullData.revision.candidates[0].features.piscinas_coinciden;\
+Huella declarada (m²)=fullData.revision.candidates[0].features.m2_huella_declarada:number;\
+Construida declarada (m²)=fullData.revision.candidates[0].features.m2_construidos_declarados:number;\
+Cubierta detectada (m²)=fullData.revision.candidates[0].features.m2_cubierta_detectada:number;\
+Cubierta − huella (m²)=fullData.revision.candidates[0].features.cubierta_menos_huella:number;\
+Cubierta / huella=fullData.revision.candidates[0].features.cubierta_entre_huella:number;\
+Avisos=fullData.revision.summary.flags;Maps=synthetic.googleMapsUrl"
 ```
 
 Para que solo sigan a pasos posteriores las parcelas en las que se ve algo, `skipIfEmpty: "fullData.<outputKey>.summary.bestAptCandidateId"` (en la receta 1, las que tienen alguna piscina a la vista).

@@ -161,7 +161,7 @@ POST /campaigns
 
 **Lead:** `commercialName` `Parcela <ref> (<uso>)` o `Parcela rústica <ref>`, `referenceId` = la referencia catastral, `googlePlacesID` = `cadastre:<catastro>:<referencia>`, `googlePlacesType` = `cadastral_parcel`, `coordinates` = un punto interior. `fullData.catastralParcel` (polígono, como lo deja FIND_ROOFTOP) y `fullData.parcel` (`ref`, `source`, `parcelClass`, `areaM2`, `location`, `polygon` y `declared`: `building.use`, `.grossFloorAreaM2`, `.footprintM2`, `.year`, `builtFraction`, `pools.count`, `pools.areaM2`).
 
-**Estimación** (`POST /campaigns/estimate` con `area`, `leadSource: "cadastral_parcels"`, `parcels`, `sample?`, `offset?`): cuenta las parcelas reales en hasta 8 teselas de 250 m repartidas por el área y extrapola. No crea nada ni cobra. **Tarda 20–50 s** (el Catastro atiende casi en serie): usa un timeout de cliente de al menos 90 s. `templateId`/`fromCampaignId` no aportan los filtros de parcelas.
+**Estimación** (`POST /campaigns/estimate` con `area`, `leadSource: "cadastral_parcels"`, `parcels`, `sample?`, `offset?`): cuenta las parcelas reales en hasta 8 teselas de 250 m repartidas por el área y extrapola. No crea nada ni cobra. **Tarda 20–60 s** (el Catastro atiende casi en serie): usa un timeout de cliente de al menos 90 s. `templateId`/`fromCampaignId` no aportan los filtros de parcelas.
 
 ```json
 { "area": { … }, "leadSource": "cadastral_parcels", "parcelFilters": { "classes": ["urban"], "uses": ["residential"] },
