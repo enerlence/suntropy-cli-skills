@@ -63,7 +63,7 @@ Tarda 20–60 s: avisa antes de lanzarlo. Lee `parcels.estimated` (cuántas ser�
 
 Guarda cada bloque en su fichero (`piscinas.json`, `edificacion.json`, `revision.json`), sin tocar nada.
 
-**1. `piscinas.json`** (`piscinas-no-declaradas`, versión 5):
+**1. `piscinas.json`** (`piscinas-no-declaradas`, versión 6):
 
 ```json
 {
