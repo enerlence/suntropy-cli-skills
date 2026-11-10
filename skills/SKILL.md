@@ -1,6 +1,6 @@
 ---
 name: suntropy-cli
-description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar platform. Use when creating solar studies, managing inventory, calculating production, running Satvolt lead-generation campaigns, analysing specific companies by name with Satvolt (an inbound lead, 1-10 named companies), or automating solar energy workflows via command line."
+description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar platform. Use when creating solar studies, managing inventory, calculating production, running Satvolt lead-generation campaigns, analysing specific companies by name with Satvolt (an inbound lead, 1-10 named companies), monitoring PV plants and inverter alarms with Suntropy Connect (passwordless signup/login, connecting manufacturer accounts, adding the Connect MCP to Claude Code, Codex, Cursor, Claude or ChatGPT), or automating solar energy workflows via command line."
 ---
 
 # @enerlence/suntropy-cli
@@ -37,6 +37,8 @@ suntropy auth set-key --key <jwt-api-key>
 suntropy auth status
 ```
 
+Suntropy Connect (inverter monitoring) has its own passwordless session, separate from `auth`: `suntropy connect login --email <email>` then `suntropy connect login --code <6 digits>`. See [[connect-monitoring]].
+
 ## Workflows
 
 This skill includes detailed guides for the main workflows:
@@ -52,6 +54,7 @@ This skill includes detailed guides for the main workflows:
 - [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
 - [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
 - [[satvolt-api]] — Reference of the Satvolt public HTTP API (`/satvolt/api/v1`) used by those commands.
+- [[connect-monitoring]] — **Suntropy Connect from the CLI**: sign the user up or in without a password (6-digit code by email, or link), read plants, energy, devices and inverter alarms of every connected brand, switch alarm watching on, connect manufacturer accounts (one-time link by default, so the agent never sees credentials) and add the Connect MCP to Claude Code, Codex, Cursor, Claude or ChatGPT (`suntropy mcp add`).
 
 ## Global Options
 
@@ -251,6 +254,27 @@ suntropy satvolt export-tables export <tableId> --file-format xlsx --out leads.x
 ```
 
 See [[satvolt-cli]] for every command, [[satvolt-api]] for the HTTP API and [[satvolt-campaign]] / [[satvolt-probe-to-full-campaign]] / [[satvolt-catastro]] / [[satvolt-lead-troubleshooting]] for workflows.
+
+### Suntropy Connect (`suntropy connect`, `suntropy mcp`) — since 0.19.0
+
+Inverter monitoring through the Suntropy Connect gateway. Own session (not `auth`). See [[connect-monitoring]].
+
+```bash
+suntropy connect login --email <email>        # → code by email (signup if new)
+suntropy connect login --code <6 digits>      # or: connect login (link) + connect login --continue
+suntropy connect status | logout
+suntropy connect summary                      # start here
+suntropy connect connections | plants [--query] | plant-status <ids…>
+suntropy connect energy <plantId> --metric pv_yield --granularity day [--from --to]
+suntropy connect power-curve <plantId> --date <YYYY-MM-DD>
+suntropy connect devices <plantId> | device-realtime <ids…> | device-history <id> --from --to
+suntropy connect alarms [--min-severity major] [--unread-only] [--plant <id>]
+suntropy connect alarms watch get | set --enabled true|false [--provider all]
+suntropy connect add <brand> [--label] [--wait]   # one-time link; --field k=v… for direct
+suntropy connect link-status <id> [--wait] | catalog [brand]
+suntropy connect tools | call <tool> --args '<json>'
+suntropy mcp add --client claude-code|codex|cursor|claude-ai|chatgpt [--print] [--brand <brand>]
+```
 
 ### Configuration (`suntropy config`) — since 0.4.0
 
