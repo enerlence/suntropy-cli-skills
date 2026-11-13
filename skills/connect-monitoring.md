@@ -92,6 +92,8 @@ Reglas (los fabricantes racionan sus APIs por cuenta):
 - `openUrl` de una planta es su página en el portal del fabricante: dásela tal cual; si es `null`, no construyas una.
 - Habla de **paneles**, nunca de «placas».
 
+¿Produce la planta lo que debería, o qué va a producir? Pasa su energía diaria a `suntropy curves forecast` (backtest o previsión con la irradiancia del sitio): ver [[curve-forecast]].
+
 Herramientas que no tienen comando propio: `suntropy connect tools` las lista y `suntropy connect call <herramienta> --args '{…}'` las llama.
 
 ## 3. Alarmas

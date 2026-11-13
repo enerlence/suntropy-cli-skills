@@ -54,6 +54,7 @@ This skill includes detailed guides for the main workflows:
 - [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
 - [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
 - [[satvolt-api]] — Reference of the Satvolt public HTTP API (`/satvolt/api/v1`) used by those commands.
+- [[curve-forecast]] — **Forecast any curve** (production, consumption…) with TimesFM 3.0: next days/hours with a p10-p90 band, or a backtest that compares the last days with what was expected and flags possible anomalies (a plant producing less than it should). Works straight from `suntropy connect energy`.
 - [[connect-monitoring]] — **Suntropy Connect from the CLI**: sign the user up or in without a password (6-digit code by email, or link), read plants, energy, devices and inverter alarms of every connected brand, switch alarm watching on, connect manufacturer accounts (one-time link by default, so the agent never sees credentials) and add the Connect MCP to Claude Code, Codex, Cursor, Claude or ChatGPT (`suntropy mcp add`).
 
 ## Global Options
@@ -138,7 +139,10 @@ suntropy curves filter-positive --input <file>
 suntropy curves filter-negative --input <file>
 suntropy curves by-period --input <file> --periods <file>
 suntropy curves filter-dates --start <date> --end <date> --input <file>
+suntropy curves forecast --input <file> [--mode forecast|backtest] [--granularity day|hour] [--horizon <n>] [--lat <lat> --lon <lon>] [--output full|points|metrics|median|lower|upper]
 ```
+
+`curves forecast` predicts any curve (or a `suntropy connect energy` series) with TimesFM 3.0, or backtests it to spot production drops — see [[curve-forecast]].
 
 All commands accept `--input -` for stdin and `--save <file>`. Pipe-chainable.
 
