@@ -271,6 +271,7 @@ suntropy connect summary                      # start here
 suntropy connect connections | plants [--query] | plant-status <ids…>
 suntropy connect energy <plantId> --metric pv_yield --granularity day [--from --to]
 suntropy connect power-curve <plantId> --date <YYYY-MM-DD>
+suntropy connect forecast <plantId> [--mode backtest|forecast] [--horizon <n>] [--days]   # since 0.20.0: production, consumption, self-consumption, surplus (TimesFM)
 suntropy connect devices <plantId> | device-realtime <ids…> | device-history <id> --from --to
 suntropy connect alarms [--min-severity major] [--unread-only] [--plant <id>]
 suntropy connect alarms watch get | set --enabled true|false [--provider all]

@@ -6,12 +6,14 @@ Es un comando de **lectura**: no guarda nada en la cuenta y funciona con `SUNTRO
 
 ## Cuándo usarlo
 
+> Para una **planta de Suntropy Connect**, usa antes `suntropy connect forecast <plantId>` ([[connect-monitoring]]): baja los datos, añade la referencia del año pasado y, si hay contador, el consumo, el autoconsumo y el excedente. `curves forecast` es para curvas sueltas (estudios, series horarias, otras métricas).
+
 | Pregunta del usuario | Modo |
 |---|---|
 | «¿Cuánto va a producir la planta esta semana?» | `forecast` diario, con `--lat/--lon` |
 | «¿Cuánto producirá mañana por horas?» | `forecast` horario, `--horizon 24` o `48` |
 | «¿Ha producido lo que debía estos días?» · «¿Hay algo raro en la planta?» | `backtest` diario, `--horizon 7-15` |
-| «¿Cuánto va a consumir el cliente el mes que viene?» | `forecast` sin coordenadas (consumo) |
+| «¿Cuánto va a consumir el cliente el mes que viene?» | `forecast` sin coordenadas (consumo); de una planta con contador, `connect forecast --mode forecast` |
 | «¿Se ajusta este modelo a la curva?» | `backtest`, mirar `metrics` |
 
 ## Entradas

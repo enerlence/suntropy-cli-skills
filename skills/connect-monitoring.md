@@ -92,7 +92,25 @@ Reglas (los fabricantes racionan sus APIs por cuenta):
 - `openUrl` de una planta es su página en el portal del fabricante: dásela tal cual; si es `null`, no construyas una.
 - Habla de **paneles**, nunca de «placas».
 
-¿Produce la planta lo que debería, o qué va a producir? Pasa su energía diaria a `suntropy curves forecast` (backtest o previsión con la irradiancia del sitio): ver [[curve-forecast]].
+### ¿Produce lo que debe? ¿Qué va a producir, consumir y verter? (`connect forecast`, desde 0.20.0)
+
+Un solo comando hace todo el pronóstico de una planta con TimesFM 3.0, como la tarjeta «Pronóstico de producción» de Suntropy:
+
+```bash
+suntropy connect forecast <plantId>                    # backtest: últimos 30 días predichos sin verlos frente a lo real
+suntropy connect forecast <plantId> --mode forecast    # próximos 7 días (--horizon hasta 16)
+suntropy connect forecast <plantId> --mode forecast --horizon 14 --days   # + detalle día a día
+```
+
+Necesita **las dos sesiones**: la de Connect (datos de la planta) y `suntropy auth` (el modelo corre en la API de Suntropy). Coordenadas: las da el gateway; si no, `--lat/--lon`. Pide 3-4 series diarias de dos años (una llamada por métrica): no lo repitas para la misma planta en el mismo rato.
+
+Cómo leerlo:
+- `production.expectedKwh` — TimesFM con la irradiación de cada día (en backtest, sin haber visto la ventana). `realKwh`, `ratio` y `anomalyDays` solo en backtest: `ratio` < 0,85 o días anómalos seguidos = revisar (alarmas, `device-realtime`).
+- `production.lastYear` — referencia **sin modelo**: irradiación × kWh/MJ que rindió la planta en las mismas fechas del año pasado. Si TimesFM dice que va bien pero `lastYear.ratio` sale bajo, es una pérdida lenta (suciedad, sombra, un string) que el modelo ha ido dando por buena. En `forecast`, si `expectedKwh` es mucho menor que `lastYear.expectedKwh`, el modelo ha visto una parada reciente: la previsión supone que sigue parada.
+- `consumption` (`null` sin contador) — `expected` (TimesFM, dos años de consumo diario), `reference` (media del mismo periodo del año pasado o del mes anterior) y, en backtest, `real` con `vsModel`/`vsReference`. Si TimesFM y la referencia discrepan mucho, fíate más de la referencia del año pasado y dilo.
+- `consumption.balance` — autoconsumo estimado = `overlapFactor` × min(producción, consumo) cada día (el factor es lo que se autoconsumió en la referencia: coincidencia con las horas de sol y batería); `surplusKwh` = excedente a red; `gridImportKwh` = comprado a red; `selfConsumptionRate` y `coverage`. En backtest, `real` al lado: autoconsumo real muy por debajo con consumo normal → el consumo se ha ido a la noche, o la batería/limitación de vertido/contador.
+
+Para una curva cualquiera (un estudio, una serie horaria, otra métrica), `suntropy curves forecast`: ver [[curve-forecast]].
 
 Herramientas que no tienen comando propio: `suntropy connect tools` las lista y `suntropy connect call <herramienta> --args '{…}'` las llama.
 
@@ -167,6 +185,7 @@ suntropy mcp add --client chatgpt       # pasos (modo desarrollador, plan de pag
 | `connect plant-status <ids…>` | Estado en tiempo real |
 | `connect energy <id> --metric --granularity [--from --to \| --last-hours]` | Serie de energía |
 | `connect power-curve <id> --date` | Curva de potencia de un día |
+| `connect forecast <id> [--mode backtest\|forecast] [--horizon] [--days]` | Producción, consumo, autoconsumo y excedente esperados (TimesFM) |
 | `connect devices <id>` · `device-realtime <ids…>` · `device-history <id> --from --to` | Equipos |
 | `connect alarms [filtros]` · `alarms watch get\|set` | Alarmas y vigilancia |
 | `connect add <marca> [--label] [--wait] [--field k=v…]` · `link-status <id>` · `catalog [marca]` | Conectar cuentas |
