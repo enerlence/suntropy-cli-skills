@@ -112,6 +112,42 @@ Cómo leerlo:
 
 Para una curva cualquiera (un estudio, una serie horaria, otra métrica), `suntropy curves forecast`: ver [[curve-forecast]].
 
+### Analizar una planta como Suntropy: salud, consumo, curva del día y causa (desde 0.21.0)
+
+El análisis que hace Suntropy en la tarjeta «Pronóstico de producción»: se calcula en Suntropy y se guarda una semana. Solo hace falta la sesión de Connect: no hace falta `suntropy auth`.
+
+```bash
+suntropy connect health <plantId>                     # salud, hallazgos, día a día y, con contador, el consumo
+suntropy connect health <plantId> --refresh           # recalcularlo (30-60 s, unos céntimos): solo si piden cifras frescas
+suntropy connect consumption-curve <plantId>          # forma de la curva del día: carga nueva de noche/tarde, fondo, horas de sol
+suntropy connect consumption-cause <plantId>          # causa estimada guardada (no gasta nada)
+suntropy connect consumption-cause <plantId> --estimate   # estimarla (Huawei: 5 llamadas de su historial; otras, 3)
+suntropy connect pins | pins add|remove|set <ids…>    # plantas fijadas arriba en Monitorización (10 como mucho)
+```
+
+Cómo evaluarlo, en este orden:
+1. **¿Me fío de los datos?**
+   - `dataRange.daysWithData` y `fullYear`: con menos de un año el 30 % histórico no existe.
+   - `health.confidence`; `health.insufficientHistory`, que con menos de 60 días es «no se sabe».
+   - `meta.generatedAt` y `meta.cached`: la edad del análisis.
+2. **Producción:**
+   - `health.score`: bien ≥ 85, revisar 60-84, mal < 60. Topes: 40 si sigue parada y 80 si faltan datos recientes (`health.caps`).
+   - `health.recent` bajo con `historical` normal → un problema reciente. `recent` normal con `historical` bajo → pérdida lenta (suciedad, sombra, un string), que el modelo ha ido dando por buena.
+   - `findings`: `stop`, `drop`, `no_data` (sin dato no es sin producción) y `degradation`, con los kWh perdidos.
+   - En `days`, una anomalía suelta suele ser una nube; dos días seguidos o más, un episodio real. Mira `irradiationMJ` del día.
+   - `lastYear.ratio`: la referencia sin modelo.
+3. **Consumo** (`consumption`, `null` sin contador):
+   - `balance`: diferencia del real frente a lo estimado; ±10 % normal, ±25 % revisar, más es anomalía.
+   - El consumo diario de TimesFM sale casi plano: juzga el **total**, no los días.
+   - `change.status`, `perDayKwh`, `onset`, `hypothesis`. Con `fit` < 0,15 el consumo es muy irregular: con cautela. `seasonal` son cambios con el frío o el calor que pueden compensarse en el año.
+   - `weekly.pattern` es el reparto entre días.
+   - Una anomalía reciente (`balance`) con `change.status: no_change` es un cambio reciente que aún no pesa en el año: no son contradictorios.
+4. **Curva del día** (`consumption-curve`): solo cambios de forma (`night_load`, `evening_load`, `base_load_up/down`, `more/less_at_solar_hours`), frente a la misma semana del año pasado. `unavailable` en Huawei, Solis y Fronius.
+5. **Causa** (`consumption-cause`):
+   - Es una **estimación** por la forma de la curva de 5 minutos. Cada causa trae `confidence` y `evidence`. Cítalas: «bloque estable de 7,2 kW de 1:10 a 3:00 → coche con cargador de 7,4 kW» o «38 ciclos de termostato de 1,3 kW en 18 h + fondo 0,22 → 0,93 kW → calefacción eléctrica».
+   - Si sale `partial: true` (el fabricante cortó por cupo), falta la comparación: vuelve a estimarla en un rato.
+   - No vuelvas a estimar lo que ya está guardado.
+
 Herramientas que no tienen comando propio: `suntropy connect tools` las lista y `suntropy connect call <herramienta> --args '{…}'` las llama.
 
 ## 3. Alarmas
@@ -186,6 +222,9 @@ suntropy mcp add --client chatgpt       # pasos (modo desarrollador, plan de pag
 | `connect energy <id> --metric --granularity [--from --to \| --last-hours]` | Serie de energía |
 | `connect power-curve <id> --date` | Curva de potencia de un día |
 | `connect forecast <id> [--mode backtest\|forecast] [--horizon] [--days]` | Producción, consumo, autoconsumo y excedente esperados (TimesFM) |
+| `connect health <id> [--refresh]` | Salud de la producción, hallazgos, día a día y consumo (análisis de Suntropy) |
+| `connect consumption-curve <id> [--refresh]` · `consumption-cause <id> [--estimate]` | Forma de la curva del día y causa estimada de un cambio de consumo |
+| `connect pins [add\|remove\|set <ids…>]` | Plantas fijadas en Monitorización |
 | `connect devices <id>` · `device-realtime <ids…>` · `device-history <id> --from --to` | Equipos |
 | `connect alarms [filtros]` · `alarms watch get\|set` | Alarmas y vigilancia |
 | `connect add <marca> [--label] [--wait] [--field k=v…]` · `link-status <id>` · `catalog [marca]` | Conectar cuentas |

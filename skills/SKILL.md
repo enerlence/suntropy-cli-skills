@@ -272,6 +272,9 @@ suntropy connect connections | plants [--query] | plant-status <ids…>
 suntropy connect energy <plantId> --metric pv_yield --granularity day [--from --to]
 suntropy connect power-curve <plantId> --date <YYYY-MM-DD>
 suntropy connect forecast <plantId> [--mode backtest|forecast] [--horizon <n>] [--days]   # since 0.20.0: production, consumption, self-consumption, surplus (TimesFM)
+suntropy connect health <plantId> [--refresh]            # since 0.21.0: Suntropy's analysis — production health 0-100, findings, consumption (balance, yearly change, weekly split)
+suntropy connect consumption-curve <plantId> | consumption-cause <plantId> [--estimate]   # daily-curve shape changes; ESTIMATED cause (EV, heating…) with confidence and evidence
+suntropy connect pins [add|remove|set <ids…>]            # plants pinned at the top of Monitoring (10 max)
 suntropy connect devices <plantId> | device-realtime <ids…> | device-history <id> --from --to
 suntropy connect alarms [--min-severity major] [--unread-only] [--plant <id>]
 suntropy connect alarms watch get | set --enabled true|false [--provider all]
