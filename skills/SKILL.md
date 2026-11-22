@@ -9,6 +9,8 @@ Agent-first CLI for the Suntropy solar platform. JSON output by default, optimiz
 
 These skills are distributed from [`enerlence/suntropy-cli-skills`](https://github.com/enerlence/suntropy-cli-skills) and give AI coding agents (Claude Code, OpenCode, Codex, etc.) knowledge of the CLI commands and workflows to automate solar energy operations.
 
+This repository is the **single source** of the skills. The npm package `@enerlence/suntropy-cli` ships a copy taken from here at publish time (its `skills/` folder), and its CI fails if a `suntropy satvolt` command is missing from `satvolt-cli`. For the latest version, use this repository rather than the copy in an older package.
+
 ## Installation
 
 Install the CLI itself:
@@ -17,9 +19,11 @@ Install the CLI itself:
 npm install -g @enerlence/suntropy-cli
 ```
 
-Drop these skill files into the target agent's skills directory:
+Get the latest skills from this repository (or use the copy in the package: `$(npm root -g)/@enerlence/suntropy-cli/skills`) and drop them into the target agent's skills directory:
 
 ```bash
+git clone --depth 1 https://github.com/enerlence/suntropy-cli-skills /tmp/suntropy-cli-skills && cd /tmp/suntropy-cli-skills
+
 # Claude Code (project-level, recommended)
 cp -r skills .claude/skills/suntropy-cli
 
@@ -36,6 +40,8 @@ cp -r skills .agents/skills/suntropy-cli
 suntropy auth set-key --key <jwt-api-key>
 suntropy auth status
 ```
+
+**Credentials are the user's.** Ask the user before completing a signup, requesting access or granting permissions on their behalf, and never ask for, type or store their password or verification codes. Agents authenticate with an API key the user creates for them (`suntropy auth set-key`, or `SUNTROPY_API_KEY`); `auth login` is for people at their own terminal.
 
 Suntropy Connect (inverter monitoring) has its own passwordless session, separate from `auth`: `suntropy connect login --email <email>` then `suntropy connect login --code <6 digits>`. See [[connect-monitoring]].
 
@@ -54,6 +60,7 @@ This skill includes detailed guides for the main workflows:
 - [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
 - [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
 - [[satvolt-api]] — Reference of the Satvolt public HTTP API (`/satvolt/api/v1`) used by those commands.
+- [[satvolt-france]] — Campaigns in France: SIRET/NAF from the official registry and real site consumption instead of the Spanish steps.
 - [[curve-forecast]] — **Forecast any curve** (production, consumption…) with TimesFM 3.0: next days/hours with a p10-p90 band, or a backtest that compares the last days with what was expected and flags possible anomalies (a plant producing less than it should). Works straight from `suntropy connect energy`.
 - [[connect-monitoring]] — **Suntropy Connect from the CLI**: sign the user up or in without a password (6-digit code by email, or link), read plants, energy, devices and inverter alarms of every connected brand, switch alarm watching on, connect manufacturer accounts (one-time link by default, so the agent never sees credentials) and add the Connect MCP to Claude Code, Codex, Cursor, Claude or ChatGPT (`suntropy mcp add`).
 
