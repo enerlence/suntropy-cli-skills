@@ -16,8 +16,8 @@ suntropy auth set-key --key <clave>          # o SUNTROPY_API_KEY=<clave>, o --t
 suntropy satvolt campaigns list
 ```
 
-- **Login por navegador** (CLI 0.18.0+): la primera línea de `--format json` es `{ verification_uri, verification_uri_complete, user_code, expires_in }`. Pásale al usuario la URL y el código en ese momento: la CLI espera (10 min como mucho) a que lo apruebe. Sólo puede aprobar un administrador de su equipo. La última línea es `{ status: "approved", label, clientUID, scopes }`, o `denied`, `expired` o `error`, con código de salida ≠ 0. Nunca pidas ni escribas la contraseña del usuario.
-- **Clave `sun_`:** no caduca en el día y el usuario la revoca desde Configuración. Permisos por defecto: `leadgen:read`, `leadgen:write` y `credits:read`. `auth status` dice su nombre y sus permisos. Con ella, los comandos que no son `satvolt` responden `V2_KEY_NOT_SUPPORTED`.
+- **Login por navegador** (CLI 0.22.0+): la primera línea de `--format json` es `{ verification_uri, verification_uri_complete, user_code, expires_in }`. Pásale al usuario la URL y el código en ese momento: la CLI espera (10 min como mucho) a que lo apruebe. Sólo puede aprobar un administrador de su equipo. La última línea es `{ status: "approved", label, clientUID, scopes }`, o `denied`, `expired` o `error`, con código de salida ≠ 0. Nunca pidas ni escribas la contraseña del usuario.
+- **Clave `sun_`:** no caduca en el día y el usuario la revoca desde Configuración. Por defecto `--web` pide 17 permisos (todos salvo analítica, LiDAR y monitorización), entre ellos `leadgen:read`, `leadgen:write` y `credits:read`; `--scopes a,b` los acota. `auth status` dice su nombre y sus permisos. Desde la CLI 0.22.0 funciona con todos los comandos, no sólo con `satvolt`.
 - **Sesión o clave antigua:** el token es un JWT con `clientUID`. Con `401 TOKEN_EXPIRED` hay que renovarlo.
 
 Todo queda acotado a la empresa de la credencial.
@@ -72,16 +72,16 @@ La entrega por sectores (`--execution-mode`, `--sectors-in-flight`, `campaigns f
 
 ## Plantillas (`templates`)
 
-Una plantilla guarda todo lo que define una campaña salvo el nombre y el área: los pasos con sus uids, los grupos de negocio, la descripción de la configuración, la consulta de texto, el límite de leads, el modo de ejecución (`executionMode`, `sectorsInFlight`) y los objetivos (`limits`). La campaña creada desde ella los hereda; lo que pases en `campaigns create` manda. No guarda el techo de créditos. Se referencian por id o por nombre exacto.
+Una plantilla guarda todo lo que define una campaña salvo el nombre y el área: los pasos con sus uids, los grupos de negocio, la descripción de la configuración, la consulta de texto, el límite de leads, el modo de ejecución (`executionMode`, `sectorsInFlight`), los objetivos (`limits`) y el origen de los leads (`leadSource`, con sus filtros `parcels`). La campaña creada desde ella los hereda; lo que pases en `campaigns create` manda. No guarda el techo de créditos. Se referencian por id o por nombre exacto.
 
 | Comando | Qué hace |
 |---|---|
 | `templates list [--search t]` | Lista las plantillas |
 | `templates get <id\|nombre>` | Detalle con pasos y config |
-| `templates create --name N --from-campaign <id> [--description t]` | Guarda como plantilla la configuración de una campaña de Maps |
-| `templates create --name N --steps @steps.json [--business-groups ids] [--max-leads n] [--search-query t] [--configuration-description t] [--execution-mode sectors\|full] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ...]` | Crea una plantilla desde JSON |
+| `templates create --name N --from-campaign <id> [--description t]` | Guarda como plantilla la configuración de una campaña de Maps (si es por parcelas, con su modo y sus filtros) |
+| `templates create --name N --steps @steps.json [--business-groups ids] [--max-leads n] [--search-query t] [--configuration-description t] [--execution-mode sectors\|full] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ...] [--lead-source s] [--parcels j] [--parcel-* …]` | Crea una plantilla desde JSON |
 | `templates update <id\|nombre> --data @t.json` | PUT: la sustituye entera (los pasos son obligatorios) |
-| `templates patch <id\|nombre> [--name] [--description] [--steps @parches] [--business-groups ids] [--max-leads n \| --no-max-leads] [--search-query t] [--execution-mode m] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ... \| --no-limits]` | Cambios sueltos; los pasos se modifican con parches por uid. `--limit` sustituye todos los objetivos de la plantilla |
+| `templates patch <id\|nombre> [--name] [--description] [--steps @parches] [--business-groups ids] [--max-leads n \| --no-max-leads] [--search-query t] [--execution-mode m] [--sectors-in-flight n] [--lead-batch-size n] [--limit clave=valor ... \| --no-limits] [--lead-source s] [--parcels j \| --no-parcels] [--parcel-* …]` | Cambios sueltos; los pasos se modifican con parches por uid. `--limit` sustituye todos los objetivos de la plantilla |
 | `templates delete <id\|nombre> --yes` | Borra la plantilla (las campañas creadas desde ella no cambian) |
 
 `TEMPLATE_NAME_TAKEN` (409) significa que ya existe una plantilla con ese nombre.
@@ -92,10 +92,11 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 |---|---|
 | `campaigns list [--state a,b] [--search t] [--source maps\|excel\|campaign] [--limit/--offset]` | Lista, las más recientes primero |
 | `campaigns get <id>` | Detalle: área, leads por estado, `sectorSearch`, `executionMode`, `sectorProgress`, créditos frente al techo (`credits`, `creditLimit`, `pauseReason`), objetivos (`limits`) y configuración. Con `--format human`: "Sector delivery: N of M sectors done · X in progress · Y waiting (K at a time)" y una línea por objetivo ("Goal completedLeads: 120 of 200 leads (60%)") |
-| `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca). `--credit-limit <n>` / `--no-credit-limit` cambian su techo de gasto (por defecto 100.000 créditos); `--limit key=valor` (repetible) fija objetivos; `--execution-mode sectors\|full` y `--sectors-in-flight N` el modo de entrega |
-| `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create` |
+| `campaigns create --name N <área> [base] [opciones]` | Crea una campaña de Maps en cola (`--start` la arranca); con `--lead-source cadastral_parcels` o cualquier `--parcel-*`, un lead por parcela catastral. `--credit-limit <n>` / `--no-credit-limit` cambian su techo de gasto (por defecto 100.000 créditos); `--limit key=valor` (repetible) fija objetivos; `--execution-mode sectors\|full` y `--sectors-in-flight N` el modo de entrega |
+| `campaigns estimate <área> [--template t \| --from-campaign id] [--business-groups ids] [--search-query t] [--sample n] [--offset n]` | Cuántos negocios encontraría la campaña (mínimo), tipos dominantes y muestra, sin crear nada ni gastar créditos. Para iterar los filtros antes de `create`. Con los flags de parcelas, cuántas parcelas serían leads (`parcels.estimated`), rechazos de la muestra, `estimatedSweepCredits` y una muestra de parcelas; tarda 20–60 s |
 | `campaigns excel-preview <file> [--sample n]` | Cabeceras y primeras filas de un Excel (primera hoja, cabeceras en la fila 1), para decidir el mapeo |
 | `campaigns excel-geocode-test <file> --columns h1,h2 [--sample n] [--region t]` | Geocodifica las primeras filas con esas columnas: comprueba que las direcciones resuelven antes de crear (una petición a Google por fila) |
+| `campaigns create-from-leads --name N (--company "Nombre \| dirección"… \| --leads @json) [--region t] [base \| --steps] [--no-geocode] [--credit-limit n] [--start]` | Crea una campaña con 1–25 empresas concretas (sin búsqueda en Maps). Sin `--start` queda en `leads_found`, lista para `leads run-step`. Sin coordenadas añade `GEOCODE_ADDRESS`. Ver `satvolt-named-leads` |
 | `campaigns create-from-excel <file> --name N --name-column h (--coordinates-column h \| --geocode-columns h1,h2) [--address-columns] [--phone-column] [--url-column] [--email-column] [--type-column] [--country t] [--mapping @json] [base] [--max-leads n] [--region t] [--start]` | Crea una campaña con las filas del Excel como leads (sin búsqueda en Maps); no se puede ampliar después |
 | `campaigns start <id>` | Arranca una campaña `queued` (gasta créditos) |
 | `campaigns logs <id> [--level error] [--since ts] [--follow]` | Logs de procesamiento (30 días, 5.000 entradas); `--follow` termina solo |
@@ -121,6 +122,7 @@ Una plantilla guarda todo lo que define una campaña salvo el nombre y el área:
 | Base (opcional, una) | `--template <id\|nombre>` o `--from-campaign <id>`: aporta pasos, grupos, descripción, consulta y límite, y los flags explícitos tienen prioridad |
 | Pipeline | `--steps @steps.json`, `--business-groups ids`, `--description t` |
 | Búsqueda | `--search-query t` (búsqueda por texto en vez de por cercanía), `--max-leads n` |
+| Parcelas catastrales | `--lead-source google_places\|cadastral_parcels`, `--parcels '<json>'\|@fichero`, `--parcel-classes urban,rustic`, `--parcel-uses residential,…`, `--parcel-min-area`/`--parcel-max-area <m²>`, `--parcel-building any\|with\|without`, `--parcel-min-built-area`/`--parcel-max-built-area <m²>`, `--parcel-pools any\|with\|without`, `--parcel-tile <m>`, `--no-parcel-declared`. Cualquier `--parcel-*` implica `cadastral_parcels`; no admite `--search-query` ni usa `--business-groups`. Ver «Campaña por parcelas catastrales» en `satvolt-campaign` |
 | Límites | `--credit-limit n` / `--no-credit-limit`, `--limit completedLeads=200 --limit annualKwh=50000000` (repetible) |
 | Entrega | `--execution-mode sectors\|full` (por defecto `sectors`), `--sectors-in-flight N` (1–20, 2 por defecto), `--lead-batch-size N` (1–500, 25 por defecto) |
 | Otros | `--address t`, `--region t`, `--start`, `--data @body.json` |
@@ -145,9 +147,10 @@ La respuesta trae `campaign.idCampaign`, `configuration`, `estimatedCreditsPerLe
 
 | Comando | Qué hace |
 |---|---|
-| `config get <id> [--save f]` | `{campaignId, source, businessGroups, description, steps[]}` |
+| `config get <id> [--save f]` | `{campaignId, source, businessGroups, postalCodePrefixes, leadSource, parcels, description, steps[]}` |
 | `config update <id> --data @cfg.json` | PUT: lista completa de pasos editables (se puede reenviar lo que devuelve `config get`) |
 | `config patch <id> --data @patch.json` | PATCH por uid: `{uid, config}` fusiona (`null` devuelve la clave a su default), `{uid, remove:true}` borra, `{action, config}` añade, `before`/`after` mueven, `disable` desactiva |
+| `config patch <id> [--lead-source s] [--parcels j \| --no-parcels] [--parcel-* …]` | Cambia el origen de los leads y los filtros de parcelas (también se combinan con `--data`). Solo con la campaña en cola: si ya empezó, `409 CAMPAIGN_STARTED` |
 | `steps list <id>` | Pasos con créditos, `executedLeads`, `runnable` y `reason` |
 | `steps add <id> --action A [--config j] [--before uid \| --after uid] [--disabled]` | Añade un paso (antes de COMPLETE por defecto) |
 | `steps set <id> <uid> [--config j] [--replace-config] [--enable\|--disable] [--before\|--after uid]` | Edita o mueve un paso |
@@ -163,7 +166,8 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `leads list <id> [--name t] [--search t] [--state a,b] [--step uid\|ACCIÓN] [--step-status s] [--with-steps] [--limit/--offset/--page]` | Lista paginada con estado, `stateError`, última acción y veredictos de QUALIFY |
 | `leads get <id> <leadId> [--full-data [claves]]` | Detalle: estado de cada paso, historial y claves de fullData |
 | `leads full-data <id> <leadId> [--keys a,b] [--path a.b.c]` | Solo el fullData, o un valor concreto |
-| `leads run-step <id> <leadId> <uid\|ACCIÓN> [--continue] [--force]` | Ejecuta un paso en un lead |
+| `leads run-step <id> <leadId> <uid\|ACCIÓN> [--continue] [--force] [--wait [--timeout s]]` | Ejecuta un paso en un lead; con `--wait` espera a que termine y devuelve su estado y lo que escribió en fullData |
+| `leads add <id> (--company "Nombre \| dirección"… \| --leads @json)` | Añade 1–25 empresas a una campaña existente (lead inbound) sin lanzar nada |
 | `leads fields <id> [--sample n] [--step uid\|ACCIÓN] [--search t]` | Campos para columnas de exportación por paso (igual que `export-tables fields`) |
 
 `--step-status` admite `reached` (por defecto), `success`, `unsatisfied`, `failure`, `skipped`, `processing` o `pending`.
@@ -234,9 +238,10 @@ Si la campaña está en marcha, cambiar el orden o quitar pasos devuelve un avis
 | `DEPENDENCY_NOT_MET` | Ejecuta antes la dependencia o usa `--force` |
 | `STEP_IN_PROGRESS` | Espera a que llegue el webhook del paso asíncrono |
 | `UNSUPPORTED_SOURCE` | La operación solo vale para campañas de Google Maps |
+| `CAMPAIGN_STARTED` | El modo y los filtros de parcelas solo cambian con la campaña en cola |
 | `TOKEN_EXPIRED`, `INVALID_TOKEN`, `MISSING_TOKEN` | Renueva o configura el token |
 | `SATVOLT_NOT_ENABLED` (401) | La cuenta no tiene LeadGen: ver «Antes de nada» en `satvolt-campaign` |
 | `INVALID_KEY` (401) | La clave `sun_` está revocada o caducada: vuelve a `suntropy auth login --web` |
 | `INSUFFICIENT_SCOPE` (403) | A la clave le falta el permiso que dice `message`: un login nuevo con `--scopes` |
-| `V2_KEY_NOT_SUPPORTED` | Ese comando aún no funciona con una clave `sun_`: necesita `suntropy auth login` |
+| `V2_KEY_NOT_SUPPORTED` | Ese comando no existe en la API v2 (sólo `config solarform advanced init-default` y `solarform statistics --create\|--update`): necesita `suntropy auth login` |
 | `V1_AUTH_NOT_SUPPORTED` | Ese comando sólo existe en la API v2 y no funciona con sesión ni con API key antigua: `suntropy auth login --web` |

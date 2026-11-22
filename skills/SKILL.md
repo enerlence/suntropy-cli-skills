@@ -1,6 +1,6 @@
 ---
 name: suntropy-cli
-description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar platform. Use when creating solar studies, managing inventory, calculating production, or automating solar energy workflows via command line."
+description: "@enerlence/suntropy-cli — agent-first CLI for the Suntropy solar platform. Use when creating solar studies, managing inventory, calculating production, running Satvolt lead-generation campaigns, analysing specific companies by name with Satvolt (an inbound lead, 1-10 named companies), monitoring PV plants and inverter alarms with Suntropy Connect (passwordless signup/login, connecting manufacturer accounts, adding the Connect MCP to Claude Code, Codex, Cursor, Claude or ChatGPT), or automating solar energy workflows via command line."
 ---
 
 # @enerlence/suntropy-cli
@@ -42,12 +42,13 @@ suntropy auth status                      # with a v2 key: label, scopes, client
 suntropy auth set-key --key <key>         # alternative: a key the user created in Settings (sun_… for API v2, or a legacy JWT key)
 ```
 
-`auth login --web` (CLI 0.18.0+) is a device login: the CLI prints a URL and a code, the user opens it with their Suntropy session and approves (only an admin of the team can), and the CLI receives an API v2 key (`sun_…`) named `CLI · <device> · <date>`, revocable from Settings. It works in sandboxes and CI: nothing listens locally. With `--format json` the first line is `{ verification_uri, verification_uri_complete, user_code, expires_in }` (give it to the user right away) and the last one `{ status: "approved" | "denied" | "expired" | "error", … }`.
+`auth login --web` (CLI 0.22.0+) is a device login: the CLI prints a URL and a code, the user opens it with their Suntropy session and approves (only an admin of the team can), and the CLI receives an API v2 key (`sun_…`) named `CLI · <device> · <date>`, revocable from Settings. It works in sandboxes and CI: nothing listens locally. With `--format json` the first line is `{ verification_uri, verification_uri_complete, user_code, expires_in }` (give it to the user right away) and the last one `{ status: "approved" | "denied" | "expired" | "error", … }`.
 
-A `sun_` key only works with `suntropy satvolt …` (LeadGen and credits) and `auth status` for now; any other command answers `V2_KEY_NOT_SUPPORTED` and needs `suntropy auth login` (a person's session) or a legacy key.
-
+Since CLI 0.22.0 a `sun_` key works with every command (studies, inventory, calculations, documents, projects, settings, LeadGen and credits): the CLI sends it to the API v2 and prints the same JSON as with a session. By default `--web` asks for 17 scopes (all but analytics, LiDAR and monitoring); `--scopes a,b` narrows them. Only three superadmin/telemetry commands stay on v1 and answer `V2_KEY_NOT_SUPPORTED` with a `sun_` key: `config solarform advanced init-default` and `solarform statistics --create|--update`. A command that only exists in v2 answers `V1_AUTH_NOT_SUPPORTED` with a session token.
 
 **Credentials are the user's.** Ask the user before completing a signup, requesting access or granting permissions on their behalf, and never ask for, type or store their password or verification codes. Agents authenticate with `suntropy auth login --web` (the user approves in their browser) or with an API key the user creates for them (`suntropy auth set-key`, or `SUNTROPY_API_KEY`); `auth login` with email and password is for people at their own terminal.
+
+Suntropy Connect (inverter monitoring) has its own passwordless session, separate from `auth`: `suntropy connect login --email <email>` then `suntropy connect login --code <6 digits>`. See [[connect-monitoring]].
 
 ## Workflows
 
@@ -57,12 +58,16 @@ This skill includes detailed guides for the main workflows:
 - [[inventory-create]] — Create inventory items: solar panels, inverters, batteries, EV chargers, heat pumps, custom assets, and manufacturers.
 - [[inventory-create-kit]] — Create and assemble solar kits, EV charger kits, and heat pump kits with components and custom assets.
 - [[config-tenant]] — Configure the client tenant: theme (branding/logo) via security service, and SolarForm + SolarForm Advanced (the 10 admin-panel sections) via solar service.
-- [[satvolt-campaign]] — Create, configure, follow and export Satvolt lead-generation campaigns (Google Maps + enrichment pipeline).
+- [[satvolt-named-leads]] — **Read it first whenever the user names specific companies (1-10, e.g. an inbound lead or "analyse Geesol in Camas: does it have panels?") instead of an area, radius or municipality.** Creates a campaign with just those companies and runs the steps one by one on each lead, reading each result before the next; never launches the whole campaign.
+- [[satvolt-campaign]] — Create, configure, follow and export Satvolt lead-generation campaigns over an area (Google Maps + enrichment pipeline). For specific named companies, use [[satvolt-named-leads]] instead.
+- [[satvolt-catastro]] — Review what the Spanish Cadastre declares on houses with a cadastral-parcel campaign: undeclared pools and buildings, declared pools that are gone or unused, and when they appeared (SAM 3 on the PNOA orthophoto, Gemini checks, historical flights). Step by step, with the four GEO_LAYER configurations.
 - [[satvolt-probe-to-full-campaign]] — Launch a probe campaign from a template, validate its data, fix the pipeline without relaunching and extend it to the whole area.
 - [[satvolt-lead-troubleshooting]] — Find failing or stuck pipeline steps and re-run them on single leads or on the whole campaign.
 - [[satvolt-cli]] — Reference of every `suntropy satvolt` command (campaigns, templates, pipeline, leads, export tables, catalog).
 - [[satvolt-api]] — Reference of the Satvolt public HTTP API (`/satvolt/api/v1`) used by those commands.
 - [[satvolt-france]] — Campaigns in France: SIRET/NAF from the official registry and real site consumption instead of the Spanish steps.
+- [[curve-forecast]] — **Forecast any curve** (production, consumption…) with TimesFM 3.0: next days/hours with a p10-p90 band, or a backtest that compares the last days with what was expected and flags possible anomalies (a plant producing less than it should). Works straight from `suntropy connect energy`.
+- [[connect-monitoring]] — **Suntropy Connect from the CLI**: sign the user up or in without a password (6-digit code by email, or link), read plants, energy, devices and inverter alarms of every connected brand, switch alarm watching on, connect manufacturer accounts (one-time link by default, so the agent never sees credentials) and add the Connect MCP to Claude Code, Codex, Cursor, Claude or ChatGPT (`suntropy mcp add`).
 
 ## Global Options
 
@@ -146,7 +151,10 @@ suntropy curves filter-positive --input <file>
 suntropy curves filter-negative --input <file>
 suntropy curves by-period --input <file> --periods <file>
 suntropy curves filter-dates --start <date> --end <date> --input <file>
+suntropy curves forecast --input <file> [--mode forecast|backtest] [--granularity day|hour] [--horizon <n>] [--lat <lat> --lon <lon>] [--output full|points|metrics|median|lower|upper]
 ```
+
+`curves forecast` predicts any curve (or a `suntropy connect energy` series) with TimesFM 3.0, or backtests it to spot production drops — see [[curve-forecast]].
 
 All commands accept `--input -` for stdin and `--save <file>`. Pipe-chainable.
 
@@ -245,11 +253,12 @@ suntropy notifications send --to-user <userUID> --as-alexandria --mention \
 
 ### Satvolt (`suntropy satvolt`)
 
-Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). With a session token or legacy key it calls `<server>/satvolt/api/v1` (`localhost:8099` locally); with a `sun_` key, the API v2 gateway (`https://api.suntropy.ai/api/v2/leadgen`). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step`.
+Lead-generation campaigns of Satvolt: B2B leads discovered on Google Maps inside an area and enriched by a configurable pipeline (rooftop, consumption estimate, qualification, AI agents). With a session token or legacy key it calls `<server>/satvolt/api/v1` (`localhost:8099` locally); with a `sun_` key, the API v2 gateway (`https://api.suntropy.ai/api/v2/leadgen`). Every pipeline step spends credits per lead (talk in credits, never in euros: the credit price depends on the client): show the estimate and ask before `start`, `extend`, `steps run` or `leads run-step` (with [[satvolt-named-leads]], one confirmation of the whole plan covers its `run-step` calls).
 
 ```bash
 suntropy satvolt templates create --name "Industria" --from-campaign 62
 suntropy satvolt campaigns estimate --circle 37.35,-6.27 --radius 5000 --business-groups businesses   # how many businesses, before spending
+suntropy satvolt campaigns estimate --circle 40.515,-3.893 --radius 800 --parcel-uses residential   # cadastral parcels as leads (pools, built vs declared, plots); 20-60 s
 suntropy satvolt campaigns create --name "Sonda" --template "Industria" --circle 37.35,-6.27 --radius 5000 --max-leads 50
 suntropy satvolt campaigns start <id> && suntropy satvolt campaigns funnel <id> --format human
 suntropy satvolt campaigns create-from-excel empresas.xlsx --name "CRM" --name-column Empresa --geocode-columns "Dirección,Municipio" --template "Industria"   # own list instead of Maps
@@ -262,7 +271,31 @@ suntropy satvolt credits checkout <packId>                      # Stripe Checkou
 suntropy satvolt export-tables export <tableId> --file-format xlsx --out leads.xlsx
 ```
 
-See [[satvolt-cli]] for every command, [[satvolt-api]] for the HTTP API and [[satvolt-campaign]] / [[satvolt-probe-to-full-campaign]] / [[satvolt-lead-troubleshooting]] for workflows.
+See [[satvolt-cli]] for every command, [[satvolt-api]] for the HTTP API and [[satvolt-campaign]] / [[satvolt-probe-to-full-campaign]] / [[satvolt-catastro]] / [[satvolt-lead-troubleshooting]] for workflows.
+
+### Suntropy Connect (`suntropy connect`, `suntropy mcp`) — since 0.19.0
+
+Inverter monitoring through the Suntropy Connect gateway. Own session (not `auth`). See [[connect-monitoring]].
+
+```bash
+suntropy connect login --email <email>        # → code by email (signup if new)
+suntropy connect login --code <6 digits>      # or: connect login (link) + connect login --continue
+suntropy connect status | logout
+suntropy connect summary                      # start here
+suntropy connect connections | plants [--query] | plant-status <ids…>
+suntropy connect energy <plantId> --metric pv_yield --granularity day [--from --to]
+suntropy connect power-curve <plantId> --date <YYYY-MM-DD>
+suntropy connect forecast <plantId> [--mode backtest|forecast] [--horizon <n>] [--days]   # since 0.20.0: production, consumption, self-consumption, surplus (TimesFM)
+suntropy connect analysis <plantId> [--refresh] [--estimate-cause] [--no-curve]   # since 0.21.0: analysis with predictions — production health 0-100, findings, consumption (balance, yearly change, weekly split, daily-curve shape, ESTIMATED cause)
+suntropy connect pins [add|remove|set <ids…>]            # plants pinned at the top of Monitoring (10 max)
+suntropy connect devices <plantId> | device-realtime <ids…> | device-history <id> --from --to
+suntropy connect alarms [--min-severity major] [--unread-only] [--plant <id>]
+suntropy connect alarms watch get | set --enabled true|false [--provider all]
+suntropy connect add <brand> [--label] [--wait]   # one-time link; --field k=v… for direct
+suntropy connect link-status <id> [--wait] | catalog [brand]
+suntropy connect tools | call <tool> --args '<json>'
+suntropy mcp add --client claude-code|codex|cursor|claude-ai|chatgpt [--print] [--brand <brand>]
+```
 
 ### Configuration (`suntropy config`) — since 0.4.0
 
